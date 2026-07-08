@@ -1,0 +1,19 @@
+# Never copy these into the image.
+# node_modules is CRITICAL to exclude: the host's (Windows) native binaries
+# would clobber the Linux ones installed by `npm ci` and break Chromium/Next.
+node_modules
+.next
+out
+build
+
+# Secrets — never bake the real key into an image.
+.env*
+!.env.example
+
+# Local scratch / VCS / editor noise
+.git
+.gitignore
+tmp
+*.log
+npm-debug.log*
+.DS_Store
