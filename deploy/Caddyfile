@@ -1,0 +1,13 @@
+# Caddy config for automatic HTTPS in front of the app container.
+# Copy to the server as /etc/caddy/Caddyfile (see GCP-DEPLOY.md Phase 7).
+#
+# Caddy listens on 80 + 443, obtains and auto-renews a free Let's Encrypt
+# certificate for these domains, redirects HTTP->HTTPS, and proxies to the
+# app container (which now binds only to localhost:3000).
+#
+# Required for a `.app` / `.dev` domain: those TLDs are HSTS-preloaded, so
+# browsers refuse plain HTTP — HTTPS is mandatory, not optional.
+
+teachingmanualgenerator.app, www.teachingmanualgenerator.app {
+    reverse_proxy 127.0.0.1:3000
+}
