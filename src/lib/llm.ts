@@ -1,10 +1,16 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
+import { z } from "zod";
 import {
+  BasicInfoSchema,
   SECTION_TYPES,
-  TeachingManualSchema,
+  SectionSchema,
   type OutputLanguage,
   type TeachingManual,
 } from "./manual-schema";
+import {
+  RESOURCE_PLATFORMS,
+  suggestionToLink,
+} from "./resource-links";
 
 /**
  * Generation layer - Google Gemini (free tier).
@@ -81,15 +87,65 @@ const RESPONSE_SCHEMA: Schema = {
             description:
               "Section body. Plain text; '- ' at line start for bullets; blank line between steps.",
           },
+          resources: {
+            type: Type.ARRAY,
+            description:
+              "0-3 digital resource SEARCH suggestions for this section (empty array when none add real value). Never URLs — only search queries.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                label: {
+                  type: Type.STRING,
+                  description:
+                    "Short display label for the resource, in the manual's language",
+                },
+                searchQuery: {
+                  type: Type.STRING,
+                  description:
+                    "The exact search text a teacher would type to find this resource",
+                },
+                platform: { type: Type.STRING, enum: [...RESOURCE_PLATFORMS] },
+              },
+              required: ["label", "searchQuery", "platform"],
+              propertyOrdering: ["label", "searchQuery", "platform"],
+            },
+          },
         },
-        required: ["id", "type", "titleMl", "titleEn", "content"],
-        propertyOrdering: ["id", "type", "titleMl", "titleEn", "content"],
+        required: ["id", "type", "titleMl", "titleEn", "content", "resources"],
+        propertyOrdering: [
+          "id",
+          "type",
+          "titleMl",
+          "titleEn",
+          "content",
+          "resources",
+        ],
       },
     },
   },
   required: ["basicInfo", "sections"],
   propertyOrdering: ["basicInfo", "sections"],
 };
+
+/**
+ * What Gemini actually returns: TeachingManual sections plus raw resource
+ * suggestions. We validate this shape, then convert suggestions into
+ * guaranteed-valid search links (media[]) — the model never writes URLs.
+ */
+const ResourceSuggestionSchema = z.object({
+  label: z.string(),
+  searchQuery: z.string(),
+  platform: z.enum(RESOURCE_PLATFORMS),
+});
+
+const GeneratedManualSchema = z.object({
+  basicInfo: BasicInfoSchema,
+  sections: z.array(
+    SectionSchema.omit({ media: true }).extend({
+      resources: z.array(ResourceSuggestionSchema).optional(),
+    })
+  ),
+});
 
 const SYSTEM_PROMPT = `You are an expert teacher-educator for the Kerala state syllabus (SCERT Kerala, Standards I-VII). You write teaching manuals - practical lesson plans Kerala teachers can use directly in class.
 
@@ -123,7 +179,13 @@ Quality rules:
 - Keep content printable: clear bullets, numbered activity steps, concise paragraphs, no decorative labels.
 - Do not copy sentences verbatim from textbook, handbook, or web pages.
 
-Formatting for section content: plain text; '- ' at line start for bullets; blank lines between steps; number activity steps.`;
+Formatting for section content: plain text; '- ' at line start for bullets; blank lines between steps; number activity steps.
+
+Digital resource suggestions (the per-section "resources" array):
+- Suggest 0-3 per section, and ONLY where a video, article or simulation genuinely helps teach that section — typically introduction, learningActivities and followUp. Most sections should have an empty array.
+- NEVER invent URLs. Provide only a search query a teacher would type. The system converts it into a safe search link.
+- platform "youtube" for classroom videos (add "KITE VICTERS" to the query when a Kerala school broadcast likely exists), "wikipedia" for reference articles (query in Malayalam for Malayalam-medium topics, English otherwise), "google" for anything else (worksheets, PhET simulations, DIKSHA content).
+- label: short and in the manual's language, e.g. "ജലചക്രം - വീഡിയോ" or "Water cycle simulation".`;
 
 export async function generateManual(
   input: GenerateManualInput
@@ -179,7 +241,7 @@ export async function generateManual(
     throw new Error("The model did not return valid JSON.");
   }
 
-  const parsed = TeachingManualSchema.safeParse(json);
+  const parsed = GeneratedManualSchema.safeParse(json);
   if (!parsed.success) {
     throw new Error(
       `Model output did not match the teaching-manual schema: ${parsed.error.issues
@@ -187,5 +249,13 @@ export async function generateManual(
         .join("; ")}`
     );
   }
-  return parsed.data;
+
+  // Convert search suggestions into guaranteed-valid links (max 3/section).
+  return {
+    basicInfo: parsed.data.basicInfo,
+    sections: parsed.data.sections.map(({ resources, ...section }) => ({
+      ...section,
+      media: (resources ?? []).slice(0, 3).map(suggestionToLink),
+    })),
+  };
 }

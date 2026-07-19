@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
-import type { TeachingManual } from "../manual-schema";
+import QRCode from "qrcode";
+import type { MediaItem, TeachingManual } from "../manual-schema";
 import {
   classifyManualLines,
   sectionNumberLabel,
@@ -59,19 +60,57 @@ function contentHtml(content: string): string {
     .join("\n");
 }
 
-export function manualToHtml(manual: TeachingManual): string {
+const LINK_TYPE_LABEL: Record<MediaItem["linkType"], string> = {
+  video: "VIDEO",
+  resource: "RESOURCE",
+  simulation: "SIMULATION",
+};
+
+/**
+ * Render a section's links as print-friendly rows: QR code (scannable from
+ * the printed page) + label + full URL. QR PNGs are inlined as data URIs.
+ */
+async function linksHtml(media: MediaItem[] | undefined): Promise<string> {
+  if (!media?.length) return "";
+
+  const rows = await Promise.all(
+    media.map(async (item) => {
+      const qr = await QRCode.toDataURL(item.url, { margin: 1, width: 160 });
+      return `
+        <div class="link-row">
+          <img class="link-qr" src="${qr}" alt="QR code">
+          <div class="link-body">
+            <p class="link-label">${escapeHtml(item.label || item.url)}
+              <span class="link-tag">${LINK_TYPE_LABEL[item.linkType]}</span></p>
+            <p class="link-url">${escapeHtml(item.url)}</p>
+          </div>
+        </div>`;
+    })
+  );
+
+  return `
+    <div class="links">
+      <p class="links-title">Digital resources / ഡിജിറ്റൽ വിഭവങ്ങൾ — scan to open</p>
+      ${rows.join("\n")}
+    </div>`;
+}
+
+export async function manualToHtml(manual: TeachingManual): Promise<string> {
   const { basicInfo, sections } = manual;
 
-  const sectionHtml = sections
-    .map(
-      (s, index) => `
+  const sectionHtml = (
+    await Promise.all(
+      sections.map(
+        async (s, index) => `
       <section>
         <div class="module-label">${sectionNumberLabel(index)}</div>
         <h2>${escapeHtml(s.titleMl)} <span>${escapeHtml(s.titleEn)}</span></h2>
         ${contentHtml(s.content)}
+        ${await linksHtml(s.media)}
       </section>`
+      )
     )
-    .join("\n");
+  ).join("\n");
 
   return `<!DOCTYPE html>
 <html lang="ml">
@@ -196,6 +235,53 @@ export function manualToHtml(manual: TeachingManual): string {
     width: 4.2pt;
   }
   .spacer { height: 4pt; }
+  .links {
+    border: 1px solid #111111;
+    border-left: 3px solid #111111;
+    break-inside: avoid;
+    margin: 4pt 0 2pt;
+    padding: 6pt 8pt;
+  }
+  .links-title {
+    font-size: 8.6pt;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin: 0 0 4pt;
+    text-transform: uppercase;
+  }
+  .link-row {
+    align-items: center;
+    break-inside: avoid;
+    display: flex;
+    gap: 8pt;
+    margin: 0 0 5pt;
+  }
+  .link-row:last-child { margin-bottom: 0; }
+  .link-qr {
+    flex: 0 0 auto;
+    height: 16mm;
+    width: 16mm;
+  }
+  .link-body { min-width: 0; }
+  .link-label {
+    font-size: 10.6pt;
+    font-weight: 700;
+    margin: 0 0 1pt;
+  }
+  .link-tag {
+    border: 1px solid #111111;
+    font-size: 6.8pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-left: 4pt;
+    padding: 0.5pt 3pt;
+    vertical-align: 1.5pt;
+  }
+  .link-url {
+    font-size: 8.2pt;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
 </style>
 </head>
 <body>
@@ -220,7 +306,7 @@ export async function manualToPdf(manual: TeachingManual): Promise<Buffer> {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(manualToHtml(manual), { waitUntil: "load" });
+    await page.setContent(await manualToHtml(manual), { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
     const pdf = await page.pdf({
       format: "A4",

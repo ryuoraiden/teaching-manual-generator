@@ -23,6 +23,23 @@ export const SECTION_TYPES = [
   "custom",
 ] as const;
 
+export const LINK_TYPES = ["video", "resource", "simulation"] as const;
+
+/**
+ * A link attached to a section (Phase 1 of section media). URLs in generated
+ * manuals are always search URLs or curated portals — never model-invented
+ * deep links — so they can't 404. Teachers can also add/edit links by hand.
+ * Phase 2 turns MediaItem into a discriminated union with {kind: "image"}.
+ */
+export const LinkItemSchema = z.object({
+  kind: z.literal("link"),
+  label: z.string().describe("Short human-readable label for the resource"),
+  url: z.string(),
+  linkType: z.enum(LINK_TYPES),
+});
+
+export const MediaItemSchema = LinkItemSchema;
+
 export const SectionSchema = z.object({
   id: z
     .string()
@@ -35,6 +52,7 @@ export const SectionSchema = z.object({
     .describe(
       "Section body. Plain text; use '- ' at line start for bullet points and blank lines between paragraphs/steps."
     ),
+  media: z.array(MediaItemSchema).optional(),
 });
 
 export const BasicInfoSchema = z.object({
@@ -55,6 +73,8 @@ export const TeachingManualSchema = z.object({
 export type Section = z.infer<typeof SectionSchema>;
 export type BasicInfo = z.infer<typeof BasicInfoSchema>;
 export type TeachingManual = z.infer<typeof TeachingManualSchema>;
+export type MediaItem = z.infer<typeof MediaItemSchema>;
+export type LinkType = (typeof LINK_TYPES)[number];
 
 /** Default bilingual titles for the standard sections (used by the editor's "add section" menu). */
 export const SECTION_TITLES: Record<
