@@ -1,7 +1,9 @@
 import {
   AlignmentType,
   Document,
+  ExternalHyperlink,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   Table,
@@ -10,7 +12,8 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import type { TeachingManual } from "../manual-schema";
+import QRCode from "qrcode";
+import type { MediaItem, TeachingManual } from "../manual-schema";
 
 /**
  * Malayalam font strategy for .docx:
@@ -45,6 +48,54 @@ function contentParagraphs(content: string): Paragraph[] {
         spacing: { after: 120 },
       });
     });
+}
+
+/**
+ * Section links → "Digital resources" block: QR image (scannable when the
+ * document is printed) + label + clickable hyperlink.
+ */
+async function linksParagraphs(
+  media: MediaItem[] | undefined
+): Promise<Paragraph[]> {
+  if (!media?.length) return [];
+
+  const out: Paragraph[] = [
+    new Paragraph({
+      children: [
+        runsFor("Digital resources / ഡിജിറ്റൽ വിഭവങ്ങൾ", { bold: true }),
+      ],
+      spacing: { before: 120, after: 60 },
+    }),
+  ];
+
+  for (const item of media) {
+    const qr = await QRCode.toBuffer(item.url, { margin: 1, width: 160 });
+    out.push(
+      new Paragraph({
+        children: [
+          new ImageRun({
+            type: "png",
+            data: qr,
+            transformation: { width: 56, height: 56 },
+          }),
+          runsFor(`  ${item.label || item.url}  `, { bold: true }),
+          new ExternalHyperlink({
+            children: [
+              new TextRun({
+                text: item.url,
+                font: ML_FONT,
+                style: "Hyperlink",
+              }),
+            ],
+            link: item.url,
+          }),
+        ],
+        spacing: { after: 120 },
+      })
+    );
+  }
+
+  return out;
 }
 
 export async function manualToDocx(manual: TeachingManual): Promise<Buffer> {
@@ -96,7 +147,8 @@ export async function manualToDocx(manual: TeachingManual): Promise<Buffer> {
         ],
         spacing: { before: 240, after: 120 },
       }),
-      ...contentParagraphs(section.content)
+      ...contentParagraphs(section.content),
+      ...(await linksParagraphs(section.media))
     );
   }
 

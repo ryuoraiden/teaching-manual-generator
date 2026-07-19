@@ -186,6 +186,52 @@ body {
   font-weight: 500;
 }
 
+.manual-links {
+  border: 1px solid #d4d4d8;
+  border-left: 3px solid #18181b;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+
+.manual-links-title {
+  color: #52525b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.manual-link-row {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.manual-link-row:last-child {
+  margin-bottom: 0;
+}
+
+.manual-link-icon {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+}
+
+.manual-link-label {
+  color: #09090b;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.manual-link-url {
+  color: #71717a;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 .manual-edit-panel {
   border-top: 1px dashed #d4d4d8;
   padding-top: 10px;
