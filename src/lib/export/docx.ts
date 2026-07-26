@@ -50,6 +50,50 @@ function contentParagraphs(content: string): Paragraph[] {
     });
 }
 
+const DATA_URI_RE = /^data:image\/(png|jpe?g|gif|bmp);base64,(.+)$/;
+
+/** Section images → embedded figures with captions. */
+function imagesParagraphs(media: MediaItem[] | undefined): Paragraph[] {
+  const images = (media ?? []).filter((m) => m.kind === "image");
+  const out: Paragraph[] = [];
+
+  for (const img of images) {
+    const match = DATA_URI_RE.exec(img.src);
+    if (!match) continue;
+    const ext = match[1] === "jpeg" ? "jpg" : match[1];
+    const data = Buffer.from(match[2], "base64");
+
+    const dispW = Math.min(360, img.width && img.width > 0 ? img.width : 360);
+    const dispH =
+      img.width && img.height
+        ? Math.round((dispW * img.height) / img.width)
+        : Math.round(dispW * 0.7);
+
+    out.push(
+      new Paragraph({
+        children: [
+          new ImageRun({
+            type: ext as "png" | "jpg" | "gif" | "bmp",
+            data,
+            transformation: { width: dispW, height: dispH },
+          }),
+        ],
+        spacing: { before: 120, after: 40 },
+      })
+    );
+    const caption = [img.caption, img.source].filter(Boolean).join(" · ");
+    if (caption) {
+      out.push(
+        new Paragraph({
+          children: [runsFor(caption, { size: 18 })],
+          spacing: { after: 120 },
+        })
+      );
+    }
+  }
+  return out;
+}
+
 /**
  * Section links → "Digital resources" block: QR image (scannable when the
  * document is printed) + label + clickable hyperlink.
@@ -57,7 +101,8 @@ function contentParagraphs(content: string): Paragraph[] {
 async function linksParagraphs(
   media: MediaItem[] | undefined
 ): Promise<Paragraph[]> {
-  if (!media?.length) return [];
+  const links = (media ?? []).filter((m) => m.kind === "link");
+  if (links.length === 0) return [];
 
   const out: Paragraph[] = [
     new Paragraph({
@@ -68,7 +113,7 @@ async function linksParagraphs(
     }),
   ];
 
-  for (const item of media) {
+  for (const item of links) {
     const qr = await QRCode.toBuffer(item.url, { margin: 1, width: 160 });
     out.push(
       new Paragraph({
@@ -148,6 +193,7 @@ export async function manualToDocx(manual: TeachingManual): Promise<Buffer> {
         spacing: { before: 240, after: 120 },
       }),
       ...contentParagraphs(section.content),
+      ...imagesParagraphs(section.media),
       ...(await linksParagraphs(section.media))
     );
   }

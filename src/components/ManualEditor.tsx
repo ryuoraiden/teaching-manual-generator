@@ -6,16 +6,23 @@ import {
   type BasicInfo,
   type Section,
   type TeachingManual,
+  type TextbookImage,
 } from "@/lib/manual-schema";
 import SectionCard from "./SectionCard";
 
 interface Props {
   manual: TeachingManual;
+  textbookImages: TextbookImage[];
   onChange: (manual: TeachingManual) => void;
   onStartOver: () => void;
 }
 
-export default function ManualEditor({ manual, onChange, onStartOver }: Props) {
+export default function ManualEditor({
+  manual,
+  textbookImages,
+  onChange,
+  onStartOver,
+}: Props) {
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
@@ -166,6 +173,7 @@ export default function ManualEditor({ manual, onChange, onStartOver }: Props) {
               section={section}
               index={index}
               total={manual.sections.length}
+              textbookImages={textbookImages}
               onChange={(s) => updateSection(index, s)}
               onRemove={() => removeSection(index)}
               onMove={(dir) => moveSection(index, dir)}

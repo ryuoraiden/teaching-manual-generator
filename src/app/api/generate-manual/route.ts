@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateManual } from "@/lib/llm";
 import { extractPdfText } from "@/lib/pdf-extract";
+import { extractChapterImages } from "@/lib/pdf-images";
 import { selectHandbookExcerpts, sliceChapter } from "@/lib/retrieval";
 import { getSourceContext } from "@/lib/source-context";
-import type { OutputLanguage } from "@/lib/manual-schema";
+import type { OutputLanguage, TextbookImage } from "@/lib/manual-schema";
 
 export const runtime = "nodejs";
 // Generation of a full bilingual manual can take a couple of minutes.
@@ -51,8 +52,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const textbookBuffer = Buffer.from(await textbookFile.arrayBuffer());
     const [textbook, handbook] = await Promise.all([
-      extractPdfText(Buffer.from(await textbookFile.arrayBuffer())),
+      extractPdfText(textbookBuffer),
       extractPdfText(Buffer.from(await handbookFile.arrayBuffer())),
     ]);
 
@@ -81,10 +83,24 @@ export async function POST(req: NextRequest) {
       sourceContext,
     });
 
+    // Extract the chapter's own figures for the teacher to place into sections.
+    // Best-effort: image failures must never fail manual generation.
+    let textbookImages: TextbookImage[] = [];
+    try {
+      textbookImages = await extractChapterImages(
+        textbookBuffer,
+        chapter.pageNumbers
+      );
+    } catch (imgErr) {
+      console.error("chapter image extraction failed:", imgErr);
+    }
+
     return NextResponse.json({
       manual,
+      textbookImages,
       meta: {
         chapterSliceStrategy: chapter.strategy,
+        imagesFound: textbookImages.length,
         sourceContext: "TextbooksAll / SCERT / Samagra index hints applied",
       },
     });

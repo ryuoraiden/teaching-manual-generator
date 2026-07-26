@@ -26,10 +26,9 @@ export const SECTION_TYPES = [
 export const LINK_TYPES = ["video", "resource", "simulation"] as const;
 
 /**
- * A link attached to a section (Phase 1 of section media). URLs in generated
- * manuals are always search URLs or curated portals — never model-invented
- * deep links — so they can't 404. Teachers can also add/edit links by hand.
- * Phase 2 turns MediaItem into a discriminated union with {kind: "image"}.
+ * A link attached to a section. URLs in generated manuals are always search
+ * URLs or curated portals — never model-invented deep links — so they can't
+ * 404. Teachers can also add/edit links by hand.
  */
 export const LinkItemSchema = z.object({
   kind: z.literal("link"),
@@ -38,7 +37,26 @@ export const LinkItemSchema = z.object({
   linkType: z.enum(LINK_TYPES),
 });
 
-export const MediaItemSchema = LinkItemSchema;
+/**
+ * An image attached to a section (Phase 2). `src` is a self-contained data:
+ * URI (JPEG), so the manual JSON stays portable end-to-end — editor, export
+ * APIs, and (later) storage — with no separate file store. Images come either
+ * from the uploaded textbook's own figures or a teacher upload.
+ */
+export const ImageItemSchema = z.object({
+  kind: z.literal("image"),
+  src: z.string().describe("Image as a data:image/*;base64 URI"),
+  caption: z.string().optional(),
+  source: z.string().optional().describe("Provenance, e.g. 'Textbook p.34'"),
+  width: z.number().optional(),
+  height: z.number().optional(),
+});
+
+/** A section media item is either a link or an image (discriminated on `kind`). */
+export const MediaItemSchema = z.discriminatedUnion("kind", [
+  LinkItemSchema,
+  ImageItemSchema,
+]);
 
 export const SectionSchema = z.object({
   id: z
@@ -74,7 +92,22 @@ export type Section = z.infer<typeof SectionSchema>;
 export type BasicInfo = z.infer<typeof BasicInfoSchema>;
 export type TeachingManual = z.infer<typeof TeachingManualSchema>;
 export type MediaItem = z.infer<typeof MediaItemSchema>;
+export type LinkItem = z.infer<typeof LinkItemSchema>;
+export type ImageItem = z.infer<typeof ImageItemSchema>;
 export type LinkType = (typeof LINK_TYPES)[number];
+
+/**
+ * The pool of images extracted from the uploaded textbook's chapter pages,
+ * returned alongside the manual for the teacher to place into sections. This
+ * is NOT part of the manual JSON — it's a candidate gallery. Placing one turns
+ * it into an ImageItem in a section's `media`.
+ */
+export interface TextbookImage {
+  src: string;
+  page: number;
+  width: number;
+  height: number;
+}
 
 /** Default bilingual titles for the standard sections (used by the editor's "add section" menu). */
 export const SECTION_TITLES: Record<

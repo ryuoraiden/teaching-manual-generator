@@ -60,21 +60,46 @@ function contentHtml(content: string): string {
     .join("\n");
 }
 
-const LINK_TYPE_LABEL: Record<MediaItem["linkType"], string> = {
+const LINK_TYPE_LABEL: Record<"video" | "resource" | "simulation", string> = {
   video: "VIDEO",
   resource: "RESOURCE",
   simulation: "SIMULATION",
 };
+
+/** Textbook/uploaded figures for a section, as a captioned image grid. */
+function imagesHtml(media: MediaItem[] | undefined): string {
+  const images = (media ?? []).filter((m) => m.kind === "image");
+  if (images.length === 0) return "";
+
+  const cells = images
+    .map(
+      (img) => `
+      <figure class="figure">
+        <img class="figure-img" src="${img.src}" alt="${escapeHtml(img.caption ?? "")}">
+        ${
+          img.caption || img.source
+            ? `<figcaption class="figure-cap">${escapeHtml(
+                [img.caption, img.source].filter(Boolean).join(" · ")
+              )}</figcaption>`
+            : ""
+        }
+      </figure>`
+    )
+    .join("\n");
+
+  return `<div class="figures">${cells}</div>`;
+}
 
 /**
  * Render a section's links as print-friendly rows: QR code (scannable from
  * the printed page) + label + full URL. QR PNGs are inlined as data URIs.
  */
 async function linksHtml(media: MediaItem[] | undefined): Promise<string> {
-  if (!media?.length) return "";
+  const links = (media ?? []).filter((m) => m.kind === "link");
+  if (links.length === 0) return "";
 
   const rows = await Promise.all(
-    media.map(async (item) => {
+    links.map(async (item) => {
       const qr = await QRCode.toDataURL(item.url, { margin: 1, width: 160 });
       return `
         <div class="link-row">
@@ -106,6 +131,7 @@ export async function manualToHtml(manual: TeachingManual): Promise<string> {
         <div class="module-label">${sectionNumberLabel(index)}</div>
         <h2>${escapeHtml(s.titleMl)} <span>${escapeHtml(s.titleEn)}</span></h2>
         ${contentHtml(s.content)}
+        ${imagesHtml(s.media)}
         ${await linksHtml(s.media)}
       </section>`
       )
@@ -235,6 +261,30 @@ export async function manualToHtml(manual: TeachingManual): Promise<string> {
     width: 4.2pt;
   }
   .spacer { height: 4pt; }
+  .figures {
+    break-inside: avoid;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6pt;
+    margin: 4pt 0 2pt;
+  }
+  .figure {
+    border: 1px solid #111111;
+    break-inside: avoid;
+    margin: 0;
+    max-width: 62mm;
+    padding: 4pt;
+  }
+  .figure-img {
+    display: block;
+    height: auto;
+    max-height: 55mm;
+    max-width: 100%;
+  }
+  .figure-cap {
+    font-size: 8pt;
+    margin-top: 2pt;
+  }
   .links {
     border: 1px solid #111111;
     border-left: 3px solid #111111;

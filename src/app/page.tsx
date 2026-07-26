@@ -3,7 +3,7 @@
 import { useState } from "react";
 import ManualEditor from "@/components/ManualEditor";
 import UploadForm from "@/components/UploadForm";
-import type { TeachingManual } from "@/lib/manual-schema";
+import type { TeachingManual, TextbookImage } from "@/lib/manual-schema";
 
 /**
  * The whole loop lives on one page with two phases:
@@ -15,6 +15,7 @@ import type { TeachingManual } from "@/lib/manual-schema";
  */
 export default function Home() {
   const [manual, setManual] = useState<TeachingManual | null>(null);
+  const [textbookImages, setTextbookImages] = useState<TextbookImage[]>([]);
 
   return (
     <main className="flex-1 px-4 py-10">
@@ -28,12 +29,21 @@ export default function Home() {
       </header>
 
       {manual === null ? (
-        <UploadForm onGenerated={setManual} />
+        <UploadForm
+          onGenerated={(m, images) => {
+            setManual(m);
+            setTextbookImages(images);
+          }}
+        />
       ) : (
         <ManualEditor
           manual={manual}
+          textbookImages={textbookImages}
           onChange={setManual}
-          onStartOver={() => setManual(null)}
+          onStartOver={() => {
+            setManual(null);
+            setTextbookImages([]);
+          }}
         />
       )}
     </main>

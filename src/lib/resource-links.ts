@@ -1,4 +1,4 @@
-import type { LinkType, MediaItem } from "./manual-schema";
+import type { LinkItem, LinkType } from "./manual-schema";
 
 /**
  * Turns model-suggested *search intents* into guaranteed-valid URLs.
@@ -19,7 +19,7 @@ export interface ResourceSuggestion {
 
 const MALAYALAM_RE = /[ഀ-ൿ]/u;
 
-export function suggestionToLink(s: ResourceSuggestion): MediaItem {
+export function suggestionToLink(s: ResourceSuggestion): LinkItem {
   const q = encodeURIComponent(s.searchQuery.trim());
   let url: string;
   let linkType: LinkType;
@@ -45,7 +45,7 @@ export function suggestionToLink(s: ResourceSuggestion): MediaItem {
 }
 
 /** Known-good Kerala/education portals offered as quick-adds in the editor. */
-export const CURATED_PORTALS: MediaItem[] = [
+export const CURATED_PORTALS: LinkItem[] = [
   {
     kind: "link",
     label: "Samagra (KITE Kerala) resource portal",
