@@ -37,11 +37,22 @@ function escapeRegExp(s: string): string {
  * Falls back to the whole (truncated) book if no heading is found, and tells
  * the caller which strategy was used so the UI/prompt can reflect it.
  */
+export interface ChapterSlice {
+  text: string;
+  strategy: "heading-match" | "name-match" | "fallback-full";
+  /**
+   * 1-based PDF page numbers belonging to the chapter — used to extract only
+   * the chapter's images. Empty on fallback (we didn't locate the chapter, so
+   * we don't scrape the whole book's images).
+   */
+  pageNumbers: number[];
+}
+
 export function sliceChapter(
   pages: PageTextResult[],
   chapterNumber: string,
   chapterName?: string
-): { text: string; strategy: "heading-match" | "name-match" | "fallback-full" } {
+): ChapterSlice {
   const numPatterns = chapterHeadingPatterns(chapterNumber);
   const nextNumPatterns = chapterHeadingPatterns(String(Number(chapterNumber) + 1));
 
@@ -58,6 +69,7 @@ export function sliceChapter(
     return {
       text: joinPages(pages).slice(0, MAX_TEXTBOOK_CHARS),
       strategy: "fallback-full",
+      pageNumbers: [],
     };
   }
 
@@ -71,9 +83,11 @@ export function sliceChapter(
   }
   end = Math.min(end, start + 36);
 
+  const slice = pages.slice(start, end);
   return {
-    text: joinPages(pages.slice(start, end)).slice(0, MAX_TEXTBOOK_CHARS),
+    text: joinPages(slice).slice(0, MAX_TEXTBOOK_CHARS),
     strategy,
+    pageNumbers: slice.map((p) => p.num),
   };
 }
 

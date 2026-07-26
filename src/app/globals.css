@@ -186,6 +186,34 @@ body {
   font-weight: 500;
 }
 
+.manual-figure-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.manual-figure {
+  border: 1px solid #d4d4d8;
+  margin: 0;
+  max-width: 220px;
+  padding: 4px;
+}
+
+.manual-figure img {
+  display: block;
+  height: auto;
+  max-height: 180px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.manual-figure figcaption {
+  color: #52525b;
+  font-size: 0.72rem;
+  margin-top: 4px;
+}
+
 .manual-links {
   border: 1px solid #d4d4d8;
   border-left: 3px solid #18181b;

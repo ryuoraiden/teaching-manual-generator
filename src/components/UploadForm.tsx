@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { OutputLanguage, TeachingManual } from "@/lib/manual-schema";
+import type {
+  OutputLanguage,
+  TeachingManual,
+  TextbookImage,
+} from "@/lib/manual-schema";
 
 interface Props {
-  onGenerated: (manual: TeachingManual) => void;
+  onGenerated: (manual: TeachingManual, textbookImages: TextbookImage[]) => void;
 }
 
 export default function UploadForm({ onGenerated }: Props) {
@@ -27,7 +31,10 @@ export default function UploadForm({ onGenerated }: Props) {
       setStatus("Reading generated manual...");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Generation failed.");
-      onGenerated(data.manual as TeachingManual);
+      onGenerated(
+        data.manual as TeachingManual,
+        (data.textbookImages ?? []) as TextbookImage[]
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
