@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline — Teaching Manual Generator</title>
+<style>
+  body {
+    align-items: center;
+    background: #fafafa;
+    color: #18181b;
+    display: flex;
+    font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+    justify-content: center;
+    margin: 0;
+    min-height: 100vh;
+    padding: 24px;
+    text-align: center;
+  }
+  .card { max-width: 380px; }
+  img { height: 72px; width: 72px; }
+  h1 { font-size: 1.25rem; margin: 16px 0 8px; }
+  p { color: #52525b; font-size: 0.95rem; line-height: 1.6; margin: 0 0 20px; }
+  button {
+    background: #047857;
+    border: 0;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 10px 20px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img src="/icons/icon-192.png" alt="">
+    <h1>You're offline</h1>
+    <p>
+      Creating a teaching manual needs an internet connection, because the
+      chapter is read and the manual is written on the server.
+      <br><br>
+      ഇന്റർനെറ്റ് കണക്ഷൻ ആവശ്യമാണ്.
+    </p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>
