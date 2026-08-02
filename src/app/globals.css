@@ -277,11 +277,92 @@ body {
   font-weight: 800;
 }
 
+/* Media rows in the section edit panel.
+   Phone: stack so the URL field gets the full width.
+   Desktop (>=640px): the original single-line layout. */
+.link-edit-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+.link-edit-row .lr-label,
+.link-edit-row .lr-url {
+  grid-column: 1 / -1;
+}
+
+/* Pin the remove button beside the type select. Grid auto-placement would
+   otherwise push it to a fourth row, since it never backfills earlier gaps. */
+.link-edit-row .lr-remove {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.image-edit-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .link-edit-row {
+    align-items: center;
+    grid-template-columns: auto minmax(0, 2fr) minmax(0, 3fr) auto;
+  }
+
+  .link-edit-row .lr-label,
+  .link-edit-row .lr-url,
+  .link-edit-row .lr-remove {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+/* Touch devices: enforce comfortable tap targets. Scoped to (hover: none) so
+   the desktop UI keeps its density. min-height beats Tailwind's h-8 height. */
+@media (hover: none) and (pointer: coarse) {
+  .manual-edit-panel input,
+  .manual-edit-panel select,
+  .manual-edit-panel button,
+  .manual-toolbar button,
+  .manual-section-head button {
+    min-height: 44px;
+  }
+
+  /* 16px stops iOS Safari auto-zooming the page on focus. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .manual-title-input {
+    padding: 5px 0;
+  }
+
+  .manual-subtitle-input {
+    padding: 4px 0;
+  }
+
+  .manual-info-cell input {
+    min-height: 44px;
+  }
+}
+
+/* The install banner is fixed to the bottom; reserve space so it never covers
+   the last control. InstallPrompt toggles this class on <body>. */
+body.has-install-banner {
+  padding-bottom: 104px;
+}
+
 @media (max-width: 760px) {
   .manual-paper {
     border-left: 0;
     border-right: 0;
-    padding: 22px 16px 30px;
+    /* Drop the fixed page height: on a phone it forced ~1120px of empty
+       white space under short manuals. */
+    min-height: 0;
+    padding: 18px 14px 26px;
   }
 
   .manual-page-header {

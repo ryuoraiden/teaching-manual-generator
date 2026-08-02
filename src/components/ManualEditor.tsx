@@ -105,27 +105,41 @@ export default function ManualEditor({
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50/95 px-4 py-3 backdrop-blur">
+      <div className="manual-toolbar sticky top-0 z-10 -mx-4 flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur">
         <button
           onClick={onStartOver}
-          className="text-sm font-medium text-zinc-500 hover:text-zinc-800"
+          className="h-11 shrink-0 px-1 text-sm font-medium text-zinc-500 hover:text-zinc-800"
         >
-          ← Start over
+          ← <span className="hidden sm:inline">Start over</span>
+          <span className="sm:hidden">New</span>
         </button>
         <div className="flex gap-2">
           <button
             onClick={() => exportAs("pdf")}
             disabled={exporting !== null}
-            className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-60"
+            className="h-11 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-60 sm:px-4"
           >
-            {exporting === "pdf" ? "Exporting..." : "Export PDF"}
+            {exporting === "pdf" ? (
+              "Exporting..."
+            ) : (
+              <>
+                <span className="hidden sm:inline">Export </span>PDF
+              </>
+            )}
           </button>
           <button
             onClick={() => exportAs("docx")}
             disabled={exporting !== null}
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+            className="h-11 rounded-md bg-blue-700 px-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60 sm:px-4"
           >
-            {exporting === "docx" ? "Exporting..." : "Export Word (.docx)"}
+            {exporting === "docx" ? (
+              "Exporting..."
+            ) : (
+              <>
+                <span className="hidden sm:inline">Export </span>Word
+                <span className="hidden sm:inline"> (.docx)</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -183,7 +197,7 @@ export default function ManualEditor({
 
         <button
           onClick={addSection}
-          className="mt-6 w-full border border-dashed border-zinc-400 bg-zinc-50 py-3 text-sm font-semibold text-zinc-600 hover:border-emerald-500 hover:text-emerald-700"
+          className="mt-6 min-h-11 w-full border border-dashed border-zinc-400 bg-zinc-50 py-3 text-sm font-semibold text-zinc-600 hover:border-emerald-500 hover:text-emerald-700"
         >
           + Add section
         </button>
