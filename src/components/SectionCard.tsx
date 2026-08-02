@@ -40,7 +40,7 @@ export default function SectionCard({
   onMove,
 }: Props) {
   const iconBtn =
-    "h-8 w-8 rounded border border-zinc-300 bg-white text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30";
+    "h-11 w-11 rounded border border-zinc-300 bg-white text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-30";
   const lines = classifyManualLines(section.content);
   const media = section.media ?? [];
   const images = media.filter((m) => m.kind === "image");
@@ -91,7 +91,7 @@ export default function SectionCard({
   }
 
   const smallBtn =
-    "h-8 rounded border border-zinc-300 bg-white px-3 text-xs font-semibold text-zinc-600 hover:border-emerald-500 hover:text-emerald-700";
+    "h-11 rounded border border-zinc-300 bg-white px-3 text-xs font-semibold text-zinc-600 hover:border-emerald-500 hover:text-emerald-700";
 
   return (
     <section className="manual-section">
@@ -123,7 +123,7 @@ export default function SectionCard({
             ↓
           </button>
           <button
-            className="h-8 rounded border border-red-200 bg-white px-2 text-xs font-medium text-red-600 hover:bg-red-50"
+            className="h-11 rounded border border-red-200 bg-white px-3 text-xs font-medium text-red-600 hover:bg-red-50"
             onClick={onRemove}
             title="Remove section"
           >
@@ -200,7 +200,7 @@ export default function SectionCard({
 
             {media.map((item, i) =>
               item.kind !== "image" ? null : (
-                <div key={i} className="flex items-start gap-2">
+                <div key={i} className="image-edit-row">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={item.src}
@@ -211,12 +211,13 @@ export default function SectionCard({
                     value={item.caption ?? ""}
                     onChange={(e) => updateItem(i, { caption: e.target.value } as Partial<ImageItem>)}
                     placeholder="Caption (optional)"
-                    className="h-8 flex-1 rounded border border-zinc-300 bg-white px-2 text-sm"
+                    className="h-11 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-sm"
                   />
                   <button
                     onClick={() => removeItem(i)}
-                    className="h-8 rounded border border-red-200 bg-white px-2 text-xs text-red-600 hover:bg-red-50"
+                    className="h-11 w-11 shrink-0 rounded border border-red-200 bg-white text-sm text-red-600 hover:bg-red-50"
                     title="Remove image"
+                    aria-label="Remove image"
                   >
                     ✕
                   </button>
@@ -229,13 +230,13 @@ export default function SectionCard({
                 <p className="mb-1 text-[11px] text-zinc-500">
                   From this chapter&apos;s textbook — click to add:
                 </p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
+                <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1">
                   {textbookImages.map((img, i) => (
                     <button
                       key={i}
                       onClick={() => addTextbookImage(img)}
                       title={`Add figure from p.${img.page}`}
-                      className="shrink-0 rounded border border-zinc-300 p-0.5 hover:border-emerald-500"
+                      className="shrink-0 snap-start rounded border border-zinc-300 p-0.5 hover:border-emerald-500"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={img.src} alt={`p.${img.page}`} className="h-16 w-16 object-cover" />
@@ -267,13 +268,13 @@ export default function SectionCard({
             </p>
             {media.map((item, i) =>
               item.kind !== "link" ? null : (
-                <div key={i} className="flex items-center gap-2">
+                <div key={i} className="link-edit-row rounded border border-zinc-200 p-2 sm:border-0 sm:p-0">
                   <select
                     value={item.linkType}
                     onChange={(e) =>
                       updateItem(i, { linkType: e.target.value } as Partial<MediaItem>)
                     }
-                    className="h-8 rounded border border-zinc-300 bg-white px-1 text-xs"
+                    className="lr-type h-11 rounded border border-zinc-300 bg-white px-2 text-xs"
                     aria-label="Link type"
                   >
                     <option value="video">Video</option>
@@ -284,18 +285,23 @@ export default function SectionCard({
                     value={item.label}
                     onChange={(e) => updateItem(i, { label: e.target.value } as Partial<MediaItem>)}
                     placeholder="Label"
-                    className="h-8 w-2/5 rounded border border-zinc-300 bg-white px-2 text-sm"
+                    className="lr-label h-11 min-w-0 rounded border border-zinc-300 bg-white px-2 text-sm"
                   />
                   <input
                     value={item.url}
                     onChange={(e) => updateItem(i, { url: e.target.value } as Partial<MediaItem>)}
                     placeholder="https://…"
-                    className="h-8 flex-1 rounded border border-zinc-300 bg-white px-2 text-sm"
+                    inputMode="url"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="lr-url h-11 min-w-0 rounded border border-zinc-300 bg-white px-2 text-sm"
                   />
                   <button
                     onClick={() => removeItem(i)}
-                    className="h-8 rounded border border-red-200 bg-white px-2 text-xs text-red-600 hover:bg-red-50"
+                    className="lr-remove h-11 w-11 shrink-0 rounded border border-red-200 bg-white text-sm text-red-600 hover:bg-red-50"
                     title="Remove link"
+                    aria-label="Remove link"
                   >
                     ✕
                   </button>
@@ -317,7 +323,7 @@ export default function SectionCard({
                   const portal = CURATED_PORTALS[Number(e.target.value)];
                   if (portal) addItem({ ...portal });
                 }}
-                className="h-8 rounded border border-zinc-300 bg-white px-1 text-xs text-zinc-600"
+                className="h-11 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs text-zinc-600 sm:flex-none"
                 aria-label="Add a Kerala portal link"
               >
                 <option value="" disabled>

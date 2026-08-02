@@ -61,6 +61,13 @@ export default function InstallPrompt() {
     };
   }, []);
 
+  // While the banner is shown, add bottom padding to the page so it never
+  // covers the last control (e.g. "+ Add section").
+  useEffect(() => {
+    document.body.classList.toggle("has-install-banner", visible);
+    return () => document.body.classList.remove("has-install-banner");
+  }, [visible]);
+
   if (!visible) return null;
 
   function dismiss() {
@@ -92,7 +99,7 @@ export default function InstallPrompt() {
         {!isIos && (
           <button
             onClick={install}
-            className="shrink-0 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+            className="h-11 shrink-0 rounded-md bg-emerald-700 px-4 text-xs font-semibold text-white hover:bg-emerald-800"
           >
             Install
           </button>
@@ -100,7 +107,7 @@ export default function InstallPrompt() {
         <button
           onClick={dismiss}
           aria-label="Dismiss"
-          className="shrink-0 rounded-md px-2 py-2 text-xs text-zinc-500 hover:bg-zinc-100"
+          className="h-11 w-11 shrink-0 rounded-md text-sm text-zinc-500 hover:bg-zinc-100"
         >
           ✕
         </button>
