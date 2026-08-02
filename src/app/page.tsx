@@ -1,21 +1,86 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ManualEditor from "@/components/ManualEditor";
+import SavedManuals from "@/components/SavedManuals";
 import UploadForm from "@/components/UploadForm";
+import {
+  loadManual,
+  newManualId,
+  saveManual,
+} from "@/lib/manual-store";
 import type { TeachingManual, TextbookImage } from "@/lib/manual-schema";
 
 /**
- * The whole loop lives on one page with two phases:
- *  1. "upload" — teacher picks textbook + handbook PDFs, chapter, language →
- *     POST /api/generate-manual (the LLM layer).
- *  2. "edit" — the generated TeachingManual JSON becomes plain client state;
- *     every edit is local. Export sends the *current edited state* to
- *     /api/export/{pdf,docx} — the LLM is never involved after generation.
+ * Two phases on one page:
+ *  1. "upload" - pick PDFs + chapter, POST /api/generate-manual, plus the list
+ *     of manuals already saved on this device.
+ *  2. "edit" - the manual is plain client state; every edit is local and
+ *     autosaved to IndexedDB, so closing the tab no longer loses the work.
+ *     Export posts the current state to /api/export/{pdf,docx}.
  */
 export default function Home() {
   const [manual, setManual] = useState<TeachingManual | null>(null);
   const [textbookImages, setTextbookImages] = useState<TextbookImage[]>([]);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [listKey, setListKey] = useState(0);
+
+  // Autosave is debounced so typing doesn't hit IndexedDB on every keystroke.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdAtRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!manual || !currentId) return;
+
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void saveManual({
+        id: currentId,
+        manual,
+        textbookImages,
+        createdAt: createdAtRef.current,
+      }).then(() => {
+        setSavedAt(Date.now());
+        setListKey((k) => k + 1);
+      });
+    }, 800);
+
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [manual, textbookImages, currentId]);
+
+  const handleGenerated = useCallback(
+    (m: TeachingManual, images: TextbookImage[]) => {
+      createdAtRef.current = Date.now();
+      setCurrentId(newManualId());
+      setManual(m);
+      setTextbookImages(images);
+    },
+    []
+  );
+
+  const handleOpen = useCallback(async (id: string) => {
+    const record = await loadManual(id);
+    if (!record) return;
+    createdAtRef.current = record.createdAt;
+    setCurrentId(record.id);
+    setManual(record.manual);
+    setTextbookImages(record.textbookImages ?? []);
+    setSavedAt(record.updatedAt);
+  }, []);
+
+  const handleStartOver = useCallback(() => {
+    // The draft stays in "My manuals"; this only leaves the editor.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setManual(null);
+    setTextbookImages([]);
+    setCurrentId(null);
+    setSavedAt(null);
+    createdAtRef.current = undefined;
+    setListKey((k) => k + 1);
+  }, []);
 
   return (
     <main className="flex-1 px-4 py-10">
@@ -29,21 +94,17 @@ export default function Home() {
       </header>
 
       {manual === null ? (
-        <UploadForm
-          onGenerated={(m, images) => {
-            setManual(m);
-            setTextbookImages(images);
-          }}
-        />
+        <>
+          <UploadForm onGenerated={handleGenerated} />
+          <SavedManuals onOpen={handleOpen} refreshKey={listKey} />
+        </>
       ) : (
         <ManualEditor
           manual={manual}
           textbookImages={textbookImages}
+          savedAt={savedAt}
           onChange={setManual}
-          onStartOver={() => {
-            setManual(null);
-            setTextbookImages([]);
-          }}
+          onStartOver={handleStartOver}
         />
       )}
     </main>

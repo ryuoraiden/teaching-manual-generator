@@ -16,6 +16,7 @@ export const maxDuration = 300;
  * Fields:
  *  - textbook:      PDF file (student textbook)
  *  - handbook:      PDF file (government teacher handbook)
+ *  - workbook:      optional PDF file (pupil workbook, where the subject has one)
  *  - standard:      e.g. "IV"
  *  - subject:       e.g. "Basic Science"
  *  - chapterNumber: e.g. "3"
@@ -59,12 +60,37 @@ export async function POST(req: NextRequest) {
     ]);
 
     const chapter = sliceChapter(textbook.pages, chapterNumber, chapterName);
-    const handbookExcerpt = selectHandbookExcerpts(handbook.pages, [
+    const queryTerms = [
       chapterName ?? "",
       subject,
       `പാഠം ${chapterNumber}`,
       `Unit ${chapterNumber}`,
-    ]);
+    ];
+    const handbookExcerpt = selectHandbookExcerpts(handbook.pages, queryTerms);
+
+    // Optional pupil workbook. Workbooks follow the textbook's chapter order,
+    // so try chapter slicing first and fall back to lexical selection when the
+    // chapter heading isn't found. Failures here must not block generation.
+    let workbookExcerpt: string | undefined;
+    const workbookFile = form.get("workbook");
+    if (workbookFile instanceof File && workbookFile.size > 0) {
+      try {
+        const workbook = await extractPdfText(
+          Buffer.from(await workbookFile.arrayBuffer())
+        );
+        const wbChapter = sliceChapter(
+          workbook.pages,
+          chapterNumber,
+          chapterName
+        );
+        workbookExcerpt =
+          wbChapter.strategy === "fallback-full"
+            ? selectHandbookExcerpts(workbook.pages, queryTerms, 8)
+            : wbChapter.text;
+      } catch (wbErr) {
+        console.error("workbook extraction failed (continuing):", wbErr);
+      }
+    }
     const sourceContext = getSourceContext({
       standard,
       subject,
@@ -80,6 +106,7 @@ export async function POST(req: NextRequest) {
       language,
       textbookExcerpt: chapter.text,
       handbookExcerpt,
+      workbookExcerpt,
       sourceContext,
     });
 
@@ -101,6 +128,7 @@ export async function POST(req: NextRequest) {
       meta: {
         chapterSliceStrategy: chapter.strategy,
         imagesFound: textbookImages.length,
+        workbookUsed: Boolean(workbookExcerpt),
         sourceContext: "TextbooksAll / SCERT / Samagra index hints applied",
       },
     });

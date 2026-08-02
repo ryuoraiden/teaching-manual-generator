@@ -96,6 +96,16 @@ export default function UploadForm({ onGenerated }: Props) {
       </div>
 
       <div>
+        <label className={label}>
+          Workbook PDF / വർക്ക്ബുക്ക്{" "}
+          <span className="font-normal text-zinc-500">
+            (optional, if the subject has one)
+          </span>
+        </label>
+        <input type="file" name="workbook" accept="application/pdf" className={field} />
+      </div>
+
+      <div>
         <label className={label}>Manual language</label>
         <select name="language" className={field} defaultValue={"both" satisfies OutputLanguage}>
           <option value="ml">Malayalam</option>

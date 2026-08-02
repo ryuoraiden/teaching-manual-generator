@@ -13,6 +13,8 @@ import SectionCard from "./SectionCard";
 interface Props {
   manual: TeachingManual;
   textbookImages: TextbookImage[];
+  /** Timestamp of the last successful local autosave, if any. */
+  savedAt?: number | null;
   onChange: (manual: TeachingManual) => void;
   onStartOver: () => void;
 }
@@ -20,6 +22,7 @@ interface Props {
 export default function ManualEditor({
   manual,
   textbookImages,
+  savedAt,
   onChange,
   onStartOver,
 }: Props) {
@@ -106,13 +109,23 @@ export default function ManualEditor({
   return (
     <div className="mx-auto max-w-5xl space-y-5">
       <div className="manual-toolbar sticky top-0 z-10 -mx-4 flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50/95 px-4 py-2 backdrop-blur">
-        <button
-          onClick={onStartOver}
-          className="h-11 shrink-0 px-1 text-sm font-medium text-zinc-500 hover:text-zinc-800"
-        >
-          ← <span className="hidden sm:inline">Start over</span>
-          <span className="sm:hidden">New</span>
-        </button>
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            onClick={onStartOver}
+            className="h-11 shrink-0 px-1 text-sm font-medium text-zinc-500 hover:text-zinc-800"
+          >
+            ← <span className="hidden sm:inline">Start over</span>
+            <span className="sm:hidden">New</span>
+          </button>
+          {savedAt && (
+            <span
+              className="truncate text-xs text-emerald-700"
+              title="Saved on this device"
+            >
+              ✓ Saved
+            </span>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => exportAs("pdf")}
