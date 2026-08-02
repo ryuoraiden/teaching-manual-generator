@@ -43,6 +43,8 @@ export interface GenerateManualInput {
   language: OutputLanguage;
   textbookExcerpt: string;
   handbookExcerpt: string;
+  /** Optional: some Kerala subjects ship a separate pupil workbook. */
+  workbookExcerpt?: string;
   sourceContext?: string;
 }
 
@@ -152,6 +154,7 @@ const SYSTEM_PROMPT = `You are an expert teacher-educator for the Kerala state s
 You will be given:
 - <textbook_excerpt>: chapter content from the student textbook
 - <handbook_excerpt>: relevant guidance from the teacher handbook
+- <workbook_excerpt>: OPTIONAL. Some Kerala subjects ship a separate pupil workbook of exercises and worksheets. When present, use it to ground the assessment, follow-up and worksheet-based activities: reference the actual workbook exercises the children will do, by page and task, instead of inventing generic exercises. When absent, do not mention a workbook at all.
 - <source_index_context>: optional public index context from TextbooksAll / SCERT / Samagra links
 
 Ground every part of the manual in the textbook and handbook excerpts. Use <source_index_context> only as source-family and style context: it tells you that Kerala resources are organized as textbooks, teacher handbooks, teaching manuals, worksheets, study notes and question papers. Do not copy web-page text, and do not invent claims from links alone.
@@ -207,6 +210,9 @@ export async function generateManual(
     `<textbook_excerpt>\n${input.textbookExcerpt}\n</textbook_excerpt>`,
     "",
     `<handbook_excerpt>\n${input.handbookExcerpt}\n</handbook_excerpt>`,
+    input.workbookExcerpt
+      ? `\n<workbook_excerpt>\n${input.workbookExcerpt}\n</workbook_excerpt>`
+      : "",
     input.sourceContext
       ? `\n<source_index_context>\n${input.sourceContext}\n</source_index_context>`
       : "",
