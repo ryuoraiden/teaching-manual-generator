@@ -1,0 +1,74 @@
+# Build the Docker image on GitHub's runners instead of on the GCP VM.
+#
+# Why this exists: the production VM is an e2-micro (0.25 vCPU / 1 GB). Building
+# there pins the machine at 100%, starves SSH so the session drops mid-build,
+# and has already caused a half-deployed container. GitHub's runners are free
+# for public repos and vastly faster, so the VM only ever *pulls* a finished
+# image — seconds instead of 10-20 minutes, with no load spike.
+name: Build and publish image
+
+on:
+  push:
+    branches: [main]
+    # Docs-only edits don't change the image, so don't spend a build on them.
+    paths-ignore:
+      - "**/*.md"
+      - ".gitignore"
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # required to push to GHCR
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      # GHCR requires a lowercase image path, and repo/owner names are not
+      # guaranteed to be lowercase — normalise rather than assume.
+      - name: Work out the image name
+        id: image
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # `latest` is what the VM pulls; the SHA tag makes rollback possible
+          # (see deploy/PIPELINE.md).
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+          # Layer cache across runs: the Playwright base image and `npm ci` are
+          # the slow parts and rarely change, so most builds only redo the app.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Image published"
+            echo ""
+            echo '```bash'
+            echo "sudo docker pull ${{ steps.image.outputs.name }}:latest"
+            echo '```'
+            echo ""
+            echo "Rollback tag: \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
