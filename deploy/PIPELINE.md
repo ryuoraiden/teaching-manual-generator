@@ -21,24 +21,21 @@ free **egress** allowance.
 `.github/workflows/deploy.yml` runs on every push to `main`. It needs no secrets
 — `GITHUB_TOKEN` is provided automatically. Nothing to configure.
 
-### 2. Make the published image public
+### 2. Image visibility — already handled
 
-This is the one manual step, and **the deploy will fail without it**. Packages
-pushed to GHCR default to *private* even from a public repo, so the VM would get
-`denied` when pulling.
+The published image is **public**, so the VM pulls it with no login. This was
+verified against the live registry with an anonymous token:
 
-After the first successful Actions run:
+```
+anonymous manifest fetch: HTTP 200
+```
 
-1. Go to <https://github.com/ryuoraiden?tab=packages>
-2. Click **teaching-manual-generator**
-3. **Package settings** → **Danger Zone** → **Change visibility** → **Public**
-
-> Prefer to keep it private? Then the VM must log in once instead. Create a
-> classic PAT with only `read:packages`, and on the VM run:
-> ```bash
-> echo 'YOUR_TOKEN' | sudo docker login ghcr.io -u ryuoraiden --password-stdin
-> ```
-> Docker stores the credential, so this is also a one-time step.
+No action needed. (GHCR packages can default to private in some setups, in which
+case a pull fails with `denied`. If you ever hit that, either set the package to
+Public under <https://github.com/ryuoraiden?tab=packages> → **teaching-manual-generator**
+→ *Package settings* → *Change visibility*, or log the VM in once with a classic
+PAT limited to `read:packages`:
+`echo 'TOKEN' | sudo docker login ghcr.io -u ryuoraiden --password-stdin`.)
 
 ### 3. Get the update script onto the VM
 
