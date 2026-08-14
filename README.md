@@ -21,8 +21,17 @@ paste into `.env.local` as `GEMINI_API_KEY`.
 Open http://localhost:3000, upload a textbook PDF + teacher handbook PDF,
 enter the chapter, and generate.
 
-> **Cost:** $0. Generation runs on **Google Gemini's free tier**
-> (`gemini-2.5-flash`, ~1,500 requests/day). Everything else runs locally.
+> **Cost:** $0. Generation runs on **Google Gemini's free tier**. Everything
+> else runs locally.
+>
+> ⚠️ **Free-tier quota is metered per model, per day, and it is small.** As of
+> 2026-08-15 `gemini-2.5-flash` returns HTTP 429 after **20 requests/day**
+> (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) — a ceiling on how many
+> manuals the whole site can produce, not a per-user limit. Set `GEMINI_MODEL`
+> in `.env.local` (or `~/manual.env` on the VM) to point generation at a
+> different model, which gets its own daily bucket. Figure placement
+> deliberately runs on a *different* model (`gemini-3.5-flash-lite`) so it
+> doesn't consume the generation budget.
 
 ## How it works (data flow)
 
@@ -112,12 +121,18 @@ scripts/download-fonts.mjs
 
 ## Design decisions (and deviations from the original spec)
 
-- **Free LLM: Google Gemini (`gemini-2.5-flash`), not the paid Claude API.** The
-  project has zero budget; Gemini's free tier needs no credit card and is strong
-  at Malayalam. We use its **structured output** (`responseSchema` +
+- **Free LLM: Google Gemini, not the paid Claude API.** The project has zero
+  budget; Gemini's free tier needs no credit card and is strong at Malayalam. We
+  use its **structured output** (`responseSchema` +
   `responseMimeType: application/json`) and then re-validate with the same Zod
   schema, so a schema-valid manual is guaranteed. Swapping the provider touches
-  only `src/lib/llm.ts` — the seam is the `generateManual()` signature.
+  only `src/lib/llm.ts` — the seam is the `generateManual()` signature. The
+  model itself is `GEMINI_MODEL` (default `gemini-2.5-flash`) — see the quota
+  warning above before changing it.
+- **Figure placement runs on a second, smaller model** (`gemini-3.5-flash-lite`,
+  in `src/lib/figure-placement.ts`). Measured against `gemini-2.5-flash` on the
+  same figures: **1.9s vs 22.3s**, with equal-or-better placements. It also
+  keeps placement out of the generation model's daily quota.
   - *Offline alternative (documented, not default):* Ollama (`gemma3` /
     `qwen2.5`) via its local OpenAI-compatible endpoint — no key, fully offline,
     but noticeably weaker Malayalam. Point `src/lib/llm.ts` at it if you ever
