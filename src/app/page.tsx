@@ -1,12 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import GeneratingStatus from "@/components/GeneratingStatus";
 import ManualEditor from "@/components/ManualEditor";
 import SavedManuals from "@/components/SavedManuals";
 import UploadForm from "@/components/UploadForm";
+import { notifyManualReady, pollJob } from "@/lib/job-client";
 import {
+  clearPendingJob,
   loadManual,
+  loadPendingJob,
   newManualId,
+  savePendingJob,
   saveManual,
 } from "@/lib/manual-store";
 import type {
@@ -32,6 +37,15 @@ export default function Home() {
   // Only meaningful for a freshly generated manual, so it is deliberately not
   // persisted with the draft — reopening a saved manual shows no notice.
   const [meta, setMeta] = useState<GenerationMeta | null>(null);
+
+  // In-flight background generation. Held here rather than in UploadForm so it
+  // survives the form unmounting, and can be resumed on a fresh page load.
+  const [job, setJob] = useState<{ id: string; label?: string } | null>(null);
+  const [stage, setStage] = useState<string | undefined>(undefined);
+  const [hiccups, setHiccups] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const jobAbort = useRef<AbortController | null>(null);
 
   // Autosave is debounced so typing doesn't hit IndexedDB on every keystroke.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -69,6 +83,86 @@ export default function Home() {
     []
   );
 
+  /** Begin (or resume) watching a background generation job. */
+  const watchJob = useCallback(
+    (jobId: string, label: string | undefined, startedAt: number) => {
+      jobAbort.current?.abort();
+      const controller = new AbortController();
+      jobAbort.current = controller;
+
+      setJob({ id: jobId, label });
+      setJobError(null);
+      setHiccups(0);
+      setElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+
+      void pollJob(jobId, {
+        signal: controller.signal,
+        onStage: setStage,
+        onNetworkHiccup: setHiccups,
+      })
+        .then((outcome) => {
+          if (controller.signal.aborted) return;
+          clearPendingJob();
+          setJob(null);
+          setStage(undefined);
+
+          if (outcome.status === "done") {
+            handleGenerated(
+              outcome.manual,
+              outcome.textbookImages,
+              outcome.meta
+            );
+            notifyManualReady(label);
+          } else {
+            setJobError(outcome.error);
+          }
+        })
+        .catch(() => {
+          // Only an abort reaches here; the poller resolves other failures.
+        });
+    },
+    [handleGenerated]
+  );
+
+  // Resume an unfinished generation after a reload, an app switch that
+  // discarded the tab, or the browser being closed entirely. This is the whole
+  // point of persisting the ticket.
+  //
+  // This is the sanctioned "subscribe to an external system" use of an effect:
+  // localStorage can't be read during render (the page is prerendered, so it
+  // would mismatch hydration), it runs once on mount, and it only sets state
+  // when a ticket actually exists.
+  useEffect(() => {
+    const pending = loadPendingJob();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
+    if (pending) watchJob(pending.jobId, pending.label, pending.startedAt);
+    return () => jobAbort.current?.abort();
+  }, [watchJob]);
+
+  // Elapsed-time ticker, so a long wait still looks alive.
+  useEffect(() => {
+    if (!job) return;
+    const t = setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [job]);
+
+  const handleJobStarted = useCallback(
+    (jobId: string, label?: string) => {
+      const startedAt = Date.now();
+      savePendingJob({ jobId, label, startedAt });
+      watchJob(jobId, label, startedAt);
+    },
+    [watchJob]
+  );
+
+  const handleCancelJob = useCallback(() => {
+    jobAbort.current?.abort();
+    clearPendingJob();
+    setJob(null);
+    setStage(undefined);
+    setJobError(null);
+  }, []);
+
   const handleOpen = useCallback(async (id: string) => {
     const record = await loadManual(id);
     if (!record) return;
@@ -104,10 +198,25 @@ export default function Home() {
       </header>
 
       {manual === null ? (
-        <>
-          <UploadForm onGenerated={handleGenerated} />
-          <SavedManuals onOpen={handleOpen} refreshKey={listKey} />
-        </>
+        job ? (
+          <GeneratingStatus
+            stage={stage}
+            label={job.label}
+            hiccups={hiccups}
+            elapsedSec={elapsedSec}
+            onCancel={handleCancelJob}
+          />
+        ) : (
+          <>
+            {jobError && (
+              <p className="mx-auto mb-4 max-w-xl rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                {jobError}
+              </p>
+            )}
+            <UploadForm onJobStarted={handleJobStarted} />
+            <SavedManuals onOpen={handleOpen} refreshKey={listKey} />
+          </>
+        )
       ) : (
         <ManualEditor
           manual={manual}
