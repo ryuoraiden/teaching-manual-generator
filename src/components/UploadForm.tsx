@@ -2,14 +2,41 @@
 
 import { useState } from "react";
 import type {
+  GenerationMeta,
   OutputLanguage,
   TeachingManual,
   TextbookImage,
 } from "@/lib/manual-schema";
 
-interface Props {
-  onGenerated: (manual: TeachingManual, textbookImages: TextbookImage[]) => void;
+/**
+ * Turn a raw fetch failure into something a teacher can act on.
+ *
+ * The browser reports every dropped connection as the bare string
+ * "Failed to fetch" — which is what teachers were seeing. It almost always
+ * means the upload was interrupted (mobile signal, backgrounded tab, or the
+ * server restarting), not that anything is wrong with their PDFs.
+ */
+function describeError(err: unknown): string {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "Generation timed out after 5 minutes. Very large textbooks can exceed this — try entering the chapter's page range so less of the book is processed.";
+  }
+  if (err instanceof TypeError) {
+    return "Lost connection to the server. This usually means the upload was interrupted — check your internet and try again. Keep this tab open while it generates.";
+  }
+  if (err instanceof Error) return err.message;
+  return "Something went wrong.";
 }
+
+interface Props {
+  onGenerated: (
+    manual: TeachingManual,
+    textbookImages: TextbookImage[],
+    meta?: GenerationMeta
+  ) => void;
+}
+
+/** Generation timeout. Long, because a big textbook on a small VM is slow. */
+const TIMEOUT_MS = 5 * 60 * 1000;
 
 export default function UploadForm({ onGenerated }: Props) {
   const [busy, setBusy] = useState(false);
@@ -19,25 +46,48 @@ export default function UploadForm({ onGenerated }: Props) {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setStatus("Preparing upload...");
+    setStatus("Preparing upload…");
     setBusy(true);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
     try {
       const formData = new FormData(e.currentTarget);
-      setStatus("Uploading PDFs and generating manual...");
+      setStatus("Uploading PDFs and generating manual…");
       const res = await fetch("/api/generate-manual", {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
-      setStatus("Reading generated manual...");
-      const data = await res.json();
+
+      setStatus("Reading generated manual…");
+      // A crashed/restarted server can return HTML or an empty body, which makes
+      // res.json() throw a confusing parse error instead of something useful.
+      let data: {
+        manual?: TeachingManual;
+        textbookImages?: TextbookImage[];
+        meta?: GenerationMeta;
+        error?: string;
+      };
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(
+          res.ok
+            ? "The server sent a response we couldn't read. Please try again."
+            : `The server returned an error (${res.status}). Please try again in a moment.`
+        );
+      }
+
       if (!res.ok) throw new Error(data.error ?? "Generation failed.");
-      onGenerated(
-        data.manual as TeachingManual,
-        (data.textbookImages ?? []) as TextbookImage[]
-      );
+      if (!data.manual) throw new Error("The server returned no manual.");
+
+      onGenerated(data.manual, data.textbookImages ?? [], data.meta);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeError(err));
     } finally {
+      clearTimeout(timeout);
       setStatus(null);
       setBusy(false);
     }
@@ -83,6 +133,21 @@ export default function UploadForm({ onGenerated }: Props) {
           <label className={label}>Chapter name (optional)</label>
           <input name="chapterName" className={field} placeholder="e.g. നമ്മുടെ ചുറ്റുപാട്" />
         </div>
+      </div>
+
+      <div>
+        <label className={label}>
+          Textbook page range{" "}
+          <span className="font-normal text-zinc-500">
+            (optional — e.g. 24-33)
+          </span>
+        </label>
+        <input name="pageRange" className={field} placeholder="24-33" inputMode="numeric" />
+        <p className="mt-1 text-xs text-zinc-500">
+          Use this if the chapter&apos;s figures don&apos;t come through. It tells us
+          exactly which PDF pages the chapter covers, which also makes generation
+          faster.
+        </p>
       </div>
 
       <div>
