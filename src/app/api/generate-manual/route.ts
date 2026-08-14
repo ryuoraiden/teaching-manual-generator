@@ -1,17 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { generateManual } from "@/lib/llm";
-import { extractPdfText } from "@/lib/pdf-extract";
-import { extractChapterImages } from "@/lib/pdf-images";
-import {
-  selectHandbookExcerpts,
-  sliceChapter,
-  type PageRange,
-} from "@/lib/retrieval";
-import { getSourceContext } from "@/lib/source-context";
-import type { OutputLanguage, TextbookImage } from "@/lib/manual-schema";
+import { NextRequest, NextResponse, after } from "next/server";
+import { createJob, completeJob, failJob } from "@/lib/job-store";
+import { runGeneration } from "@/lib/generate-pipeline";
+import type { PageRange } from "@/lib/retrieval";
+import type { OutputLanguage } from "@/lib/manual-schema";
 
 export const runtime = "nodejs";
-// Generation of a full bilingual manual can take a couple of minutes.
+// Generation of a full bilingual manual can take a couple of minutes. This
+// bounds the `after()` callback too, not just the request.
 export const maxDuration = 300;
 
 /**
@@ -50,8 +45,13 @@ function parsePageRange(raw: string): PageRange | undefined {
  *  - pageRange:     optional, e.g. "24-33" — overrides chapter auto-detection
  *  - language:      "ml" | "en" | "both"
  *
- * Pipeline: extract -> retrieve -> add source-index context -> generate,
- * with figure extraction running in parallel with the model call.
+ * Returns **202 { jobId }** as soon as the upload has been received; generation
+ * then continues server-side via `after()`. Poll GET ./[jobId] for the result.
+ *
+ * This is what makes the app usable on a phone: previously the response was
+ * held open for the whole 20-60s+ generation, so backgrounding the app let
+ * Android freeze or discard the tab and kill the connection mid-flight. Now the
+ * only long-held connection is the upload itself.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -81,121 +81,50 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Optional explicit page range, for books whose chapter headings we can't
-    // detect. "24-33" / "24 to 33" / "24".
     const pageRange = parsePageRange(String(form.get("pageRange") ?? ""));
 
-    const t0 = Date.now();
-    let textbookBuffer: Buffer | null = Buffer.from(
-      await textbookFile.arrayBuffer()
-    );
-    const [textbook, handbook] = await Promise.all([
-      extractPdfText(textbookBuffer),
-      extractPdfText(Buffer.from(await handbookFile.arrayBuffer())),
-    ]);
-    const tExtract = Date.now() - t0;
-
-    const chapter = sliceChapter(
-      textbook.pages,
-      chapterNumber,
-      chapterName,
-      pageRange
-    );
-    const queryTerms = [
-      chapterName ?? "",
-      subject,
-      `പാഠം ${chapterNumber}`,
-      `Unit ${chapterNumber}`,
-    ];
-    const handbookExcerpt = selectHandbookExcerpts(handbook.pages, queryTerms);
-
-    // Optional pupil workbook. Workbooks follow the textbook's chapter order,
-    // so try chapter slicing first and fall back to lexical selection when the
-    // chapter heading isn't found. Failures here must not block generation.
-    let workbookExcerpt: string | undefined;
+    // Read the uploads into memory *before* responding: once the response is
+    // sent the request body is gone, so `after()` can't go back for it.
     const workbookFile = form.get("workbook");
-    if (workbookFile instanceof File && workbookFile.size > 0) {
-      try {
-        const workbook = await extractPdfText(
-          Buffer.from(await workbookFile.arrayBuffer())
-        );
-        const wbChapter = sliceChapter(
-          workbook.pages,
-          chapterNumber,
-          chapterName
-        );
-        workbookExcerpt =
-          wbChapter.strategy === "fallback-full"
-            ? selectHandbookExcerpts(workbook.pages, queryTerms, 8)
-            : wbChapter.text;
-      } catch (wbErr) {
-        console.error("workbook extraction failed (continuing):", wbErr);
-      }
-    }
-    const sourceContext = getSourceContext({
-      standard,
-      subject,
-      chapterNumber,
-      chapterName,
-    });
-
-    // Figure extraction doesn't depend on the manual, so it runs *alongside* the
-    // model call rather than after it. On an image-heavy chapter this used to
-    // add its full duration to every request as pure dead time.
-    const tGen = Date.now();
-    let imagesMs = 0;
-    const imagesPromise = (async (): Promise<TextbookImage[]> => {
-      const started = Date.now();
-      try {
-        return await extractChapterImages(textbookBuffer!, chapter.pageNumbers);
-      } catch (imgErr) {
-        console.error("chapter image extraction failed:", imgErr);
-        return [];
-      } finally {
-        imagesMs = Date.now() - started;
-        // Release the textbook (tens of MB) as soon as extraction is done,
-        // instead of pinning it for the rest of the model call on a 1 GB VM.
-        textbookBuffer = null;
-      }
-    })();
-
-    const [manual, textbookImages] = await Promise.all([
-      generateManual({
-        standard,
-        subject,
-        chapterNumber,
-        chapterName,
-        language,
-        textbookExcerpt: chapter.text,
-        handbookExcerpt,
-        workbookExcerpt,
-        sourceContext,
-      }),
-      imagesPromise,
+    const [textbookBuffer, handbookBuffer, workbookBuffer] = await Promise.all([
+      textbookFile.arrayBuffer().then(Buffer.from),
+      handbookFile.arrayBuffer().then(Buffer.from),
+      workbookFile instanceof File && workbookFile.size > 0
+        ? workbookFile.arrayBuffer().then(Buffer.from)
+        : Promise.resolve(undefined),
     ]);
-    const generateMs = Date.now() - tGen;
 
-    const timings = {
-      pdfExtractMs: tExtract,
-      // Wall time of the parallel phase, plus what each part cost inside it.
-      generatePhaseMs: generateMs,
-      imagesMs,
-      totalMs: Date.now() - t0,
-    };
-    console.log("generate-manual timings:", JSON.stringify(timings));
+    const job = createJob(
+      `${subject} · Standard ${standard} · Chapter ${chapterNumber}`
+    );
 
-    return NextResponse.json({
-      manual,
-      textbookImages,
-      meta: {
-        chapterSliceStrategy: chapter.strategy,
-        chapterPageCount: chapter.pageNumbers.length,
-        imagesFound: textbookImages.length,
-        workbookUsed: Boolean(workbookExcerpt),
-        sourceContext: "TextbooksAll / SCERT / Samagra index hints applied",
-        timings,
-      },
+    after(async () => {
+      try {
+        const result = await runGeneration(job.id, {
+          textbookBuffer,
+          handbookBuffer,
+          workbookBuffer,
+          standard,
+          subject,
+          chapterNumber,
+          chapterName,
+          pageRange,
+          language,
+        });
+        completeJob(job.id, result);
+      } catch (err) {
+        console.error(`generate-manual job ${job.id} failed:`, err);
+        failJob(
+          job.id,
+          err instanceof Error ? err.message : "Generation failed."
+        );
+      }
     });
+
+    return NextResponse.json(
+      { jobId: job.id, label: job.label },
+      { status: 202 }
+    );
   } catch (err) {
     console.error("generate-manual failed:", err);
     const message = err instanceof Error ? err.message : "Generation failed.";

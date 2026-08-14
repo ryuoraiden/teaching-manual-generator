@@ -1,44 +1,40 @@
 "use client";
 
 import { useState } from "react";
-import type {
-  GenerationMeta,
-  OutputLanguage,
-  TeachingManual,
-  TextbookImage,
-} from "@/lib/manual-schema";
+import type { OutputLanguage } from "@/lib/manual-schema";
+import { requestNotificationPermission } from "@/lib/job-client";
 
 /**
  * Turn a raw fetch failure into something a teacher can act on.
  *
  * The browser reports every dropped connection as the bare string
- * "Failed to fetch" — which is what teachers were seeing. It almost always
- * means the upload was interrupted (mobile signal, backgrounded tab, or the
- * server restarting), not that anything is wrong with their PDFs.
+ * "Failed to fetch" — which is what teachers were seeing. At this point it can
+ * only mean the *upload* was interrupted, since generation no longer holds the
+ * connection open.
  */
 function describeError(err: unknown): string {
   if (err instanceof DOMException && err.name === "AbortError") {
-    return "Generation timed out after 5 minutes. Very large textbooks can exceed this — try entering the chapter's page range so less of the book is processed.";
+    return "The upload timed out. A very large textbook on a slow connection can exceed this — try again, or enter the chapter's page range so less of the book is sent.";
   }
   if (err instanceof TypeError) {
-    return "Lost connection to the server. This usually means the upload was interrupted — check your internet and try again. Keep this tab open while it generates.";
+    return "The upload was interrupted before it finished. Check your internet and try again — and keep the app open until it says generating has started.";
   }
   if (err instanceof Error) return err.message;
   return "Something went wrong.";
 }
 
 interface Props {
-  onGenerated: (
-    manual: TeachingManual,
-    textbookImages: TextbookImage[],
-    meta?: GenerationMeta
-  ) => void;
+  /** Called once the upload lands and the server hands back a job ticket. */
+  onJobStarted: (jobId: string, label?: string) => void;
 }
 
-/** Generation timeout. Long, because a big textbook on a small VM is slow. */
-const TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * Upload timeout. This now covers only the upload itself, not generation, so
+ * it can be much tighter than the old whole-request timeout.
+ */
+const UPLOAD_TIMEOUT_MS = 3 * 60 * 1000;
 
-export default function UploadForm({ onGenerated }: Props) {
+export default function UploadForm({ onJobStarted }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -50,26 +46,24 @@ export default function UploadForm({ onGenerated }: Props) {
     setBusy(true);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+
+    // Asked here because a submit is a genuine user gesture (browsers require
+    // one) and because it's the moment the teacher has expressed intent to wait.
+    void requestNotificationPermission();
 
     try {
       const formData = new FormData(e.currentTarget);
-      setStatus("Uploading PDFs and generating manual…");
+      setStatus("Uploading PDFs — keep the app open…");
       const res = await fetch("/api/generate-manual", {
         method: "POST",
         body: formData,
         signal: controller.signal,
       });
 
-      setStatus("Reading generated manual…");
       // A crashed/restarted server can return HTML or an empty body, which makes
       // res.json() throw a confusing parse error instead of something useful.
-      let data: {
-        manual?: TeachingManual;
-        textbookImages?: TextbookImage[];
-        meta?: GenerationMeta;
-        error?: string;
-      };
+      let data: { jobId?: string; label?: string; error?: string };
       try {
         data = await res.json();
       } catch {
@@ -81,15 +75,17 @@ export default function UploadForm({ onGenerated }: Props) {
       }
 
       if (!res.ok) throw new Error(data.error ?? "Generation failed.");
-      if (!data.manual) throw new Error("The server returned no manual.");
+      if (!data.jobId) throw new Error("The server didn't start the generation.");
 
-      onGenerated(data.manual, data.textbookImages ?? [], data.meta);
+      // Handing the ticket up ends this form's involvement; the page owns the
+      // job from here, which is what lets it survive a reload.
+      onJobStarted(data.jobId, data.label);
     } catch (err) {
       setError(describeError(err));
-    } finally {
-      clearTimeout(timeout);
       setStatus(null);
       setBusy(false);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

@@ -138,3 +138,57 @@ export async function deleteManual(id: string): Promise<void> {
     console.error("Could not delete the manual:", err);
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Pending background generation
+ * ------------------------------------------------------------------ */
+
+const PENDING_KEY = "tmg:pending-job";
+/** Slightly beyond the server's 30-minute job TTL; older tickets can't resolve. */
+const PENDING_MAX_AGE_MS = 35 * 60 * 1000;
+
+/**
+ * The ticket for an in-flight generation. Kept in localStorage rather than
+ * IndexedDB: it is a few bytes, and it must be readable synchronously on load
+ * so a resumed generation can be shown immediately rather than after an async
+ * round-trip. (IndexedDB is used for manuals because those embed base64
+ * images; that reasoning doesn't apply here.)
+ */
+export interface PendingJob {
+  jobId: string;
+  label?: string;
+  startedAt: number;
+}
+
+export function savePendingJob(job: PendingJob): void {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(job));
+  } catch {
+    // Storage blocked (private mode). Generation still works for as long as
+    // the tab stays open; only resume-after-close is lost.
+  }
+}
+
+export function loadPendingJob(): PendingJob | null {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const job = JSON.parse(raw) as PendingJob;
+    if (!job?.jobId) return null;
+    if (Date.now() - job.startedAt > PENDING_MAX_AGE_MS) {
+      clearPendingJob();
+      return null;
+    }
+    return job;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingJob(): void {
+  try {
+    localStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Nothing to do; a stale ticket self-expires via PENDING_MAX_AGE_MS.
+  }
+}
