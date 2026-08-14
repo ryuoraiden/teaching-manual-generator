@@ -1,4 +1,5 @@
 import { generateManual } from "./llm";
+import { placeFigures } from "./figure-placement";
 import { extractPdfText } from "./pdf-extract";
 import { extractChapterImages } from "./pdf-images";
 import {
@@ -116,7 +117,7 @@ export async function runGeneration(
     }
   })();
 
-  const [manual, textbookImages] = await Promise.all([
+  const [generated, textbookImages] = await Promise.all([
     generateManual({
       standard,
       subject,
@@ -132,10 +133,35 @@ export async function runGeneration(
   ]);
   const generatePhaseMs = Date.now() - tGen;
 
+  // Phase 4: let the model see the figures and drop them into the sections they
+  // support. This needs both halves above, so it's the one step that can't be
+  // parallelised — affordable only because generation is a background job.
+  // Best-effort: a failure here must never cost the teacher their manual.
+  let manual = generated;
+  let figuresPlaced = 0;
+  let placementMs = 0;
+  if (textbookImages.length > 0) {
+    setStage(jobId, "Placing the textbook figures…");
+    const tPlace = Date.now();
+    try {
+      const result = await placeFigures({
+        manual: generated,
+        images: textbookImages,
+        language,
+      });
+      manual = result.manual;
+      figuresPlaced = result.placed;
+    } catch (placeErr) {
+      console.error("figure placement failed (continuing):", placeErr);
+    }
+    placementMs = Date.now() - tPlace;
+  }
+
   const timings = {
     pdfExtractMs,
     generatePhaseMs,
     imagesMs,
+    placementMs,
     totalMs: Date.now() - t0,
   };
   console.log(`generate-manual timings [${jobId}]:`, JSON.stringify(timings));
@@ -147,6 +173,7 @@ export async function runGeneration(
       chapterSliceStrategy: chapter.strategy,
       chapterPageCount: chapter.pageNumbers.length,
       imagesFound: textbookImages.length,
+      figuresPlaced,
       workbookUsed: Boolean(workbookExcerpt),
       sourceContext: "TextbooksAll / SCERT / Samagra index hints applied",
       timings,

@@ -6,9 +6,10 @@ import ManualEditor from "@/components/ManualEditor";
 import { DEMO_MANUAL, DEMO_TEXTBOOK_IMAGES } from "@/lib/demo-manual";
 import type { GenerationMeta, TeachingManual } from "@/lib/manual-schema";
 
-/** Stand-in diagnostics so the "no figures" notice can be checked without a
- *  real generation. `?notice=fallback` (couldn't locate the chapter) or
- *  `?notice=empty` (chapter found, but it has no extractable figures). */
+/** Stand-in diagnostics so the figure notices can be checked without a real
+ *  generation. `?notice=` accepts: `fallback` (couldn't locate the chapter),
+ *  `empty` (chapter found, no extractable figures), `placed` (Phase 4 placed
+ *  some), `unplaced` (figures found but none matched a section). */
 function demoMeta(kind: string | null): GenerationMeta | null {
   if (kind === "fallback") {
     return {
@@ -23,6 +24,24 @@ function demoMeta(kind: string | null): GenerationMeta | null {
       chapterSliceStrategy: "heading-match",
       chapterPageCount: 8,
       imagesFound: 0,
+      workbookUsed: false,
+    };
+  }
+  if (kind === "placed") {
+    return {
+      chapterSliceStrategy: "heading-match",
+      chapterPageCount: 8,
+      imagesFound: 7,
+      figuresPlaced: 3,
+      workbookUsed: false,
+    };
+  }
+  if (kind === "unplaced") {
+    return {
+      chapterSliceStrategy: "heading-match",
+      chapterPageCount: 8,
+      imagesFound: 7,
+      figuresPlaced: 0,
       workbookUsed: false,
     };
   }

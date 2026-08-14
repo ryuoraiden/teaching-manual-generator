@@ -21,7 +21,16 @@ import {
  * writing for.
  */
 
-const MODEL = "gemini-2.5-flash";
+/**
+ * Generation model. Overridable via GEMINI_MODEL so the model can be changed on
+ * the VM (in ~/manual.env) without a rebuild.
+ *
+ * This matters more than it looks: the Gemini free tier meters requests per
+ * project *per model*, and gemini-2.5-flash is currently capped at **20
+ * requests per day** — a hard ceiling on how many manuals the whole site can
+ * produce. Pointing this at a different model gets a separate daily bucket.
+ */
+const MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 
 let ai: GoogleGenAI | null = null;
 function getClient(): GoogleGenAI {

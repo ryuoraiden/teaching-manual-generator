@@ -123,12 +123,15 @@ export interface GenerationMeta {
     | "fallback-full";
   chapterPageCount: number;
   imagesFound: number;
+  /** How many of those figures the model placed into sections (Phase 4). */
+  figuresPlaced?: number;
   workbookUsed: boolean;
   sourceContext?: string;
   timings?: {
     pdfExtractMs: number;
     generatePhaseMs: number;
     imagesMs: number;
+    placementMs?: number;
     totalMs: number;
   };
 }

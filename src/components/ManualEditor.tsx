@@ -27,12 +27,40 @@ interface Props {
  * feature is broken", when the real cause is almost always that we couldn't
  * work out which pages the chapter occupies.
  */
-function figureNotice(meta: GenerationMeta): string | null {
-  if (meta.imagesFound > 0) return null;
-  if (meta.chapterSliceStrategy === "fallback-full") {
-    return "We couldn't tell which pages this chapter covers, so no textbook figures were extracted. Start over and enter the chapter's page range (e.g. 24-33) to get them.";
+interface Notice {
+  text: string;
+  tone: "good" | "warn";
+}
+
+function figureNotice(meta: GenerationMeta): Notice | null {
+  if (meta.imagesFound > 0) {
+    const placed = meta.figuresPlaced ?? 0;
+    if (placed > 0) {
+      return {
+        tone: "good",
+        text: `${placed} textbook ${
+          placed === 1 ? "figure was" : "figures were"
+        } placed into sections automatically — check they're where you'd want them, and add more from each section's gallery.`,
+      };
+    }
+    // Figures were found but none matched a section well enough to place.
+    return {
+      tone: "warn",
+      text: `${meta.imagesFound} textbook ${
+        meta.imagesFound === 1 ? "figure is" : "figures are"
+      } available in each section's gallery, but none clearly matched a section, so nothing was placed automatically. Add the ones you want.`,
+    };
   }
-  return "No figures were found on this chapter's pages. The textbook may store them in a form we can't extract (for example, scanned pages). You can still add your own images to any section.";
+  if (meta.chapterSliceStrategy === "fallback-full") {
+    return {
+      tone: "warn",
+      text: "We couldn't tell which pages this chapter covers, so no textbook figures were extracted. Start over and enter the chapter's page range (e.g. 24-33) to get them.",
+    };
+  }
+  return {
+    tone: "warn",
+    text: "No figures were found on this chapter's pages. The textbook may store them in a form we can't extract (for example, scanned pages). You can still add your own images to any section.",
+  };
 }
 
 export default function ManualEditor({
@@ -181,13 +209,23 @@ export default function ManualEditor({
       )}
 
       {notice && (
-        <div className="flex items-start gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <p className="flex-1">{notice}</p>
+        <div
+          className={`flex items-start gap-3 rounded-md px-3 py-2 text-sm ${
+            notice.tone === "good"
+              ? "bg-emerald-50 text-emerald-900"
+              : "bg-amber-50 text-amber-900"
+          }`}
+        >
+          <p className="flex-1">{notice.text}</p>
           <button
             type="button"
             onClick={() => setNoticeDismissed(true)}
             aria-label="Dismiss"
-            className="min-h-11 min-w-11 shrink-0 rounded text-amber-700 hover:bg-amber-100"
+            className={`min-h-11 min-w-11 shrink-0 rounded ${
+              notice.tone === "good"
+                ? "text-emerald-700 hover:bg-emerald-100"
+                : "text-amber-700 hover:bg-amber-100"
+            }`}
           >
             ✕
           </button>
