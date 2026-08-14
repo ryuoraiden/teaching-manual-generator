@@ -109,6 +109,30 @@ export interface TextbookImage {
   height: number;
 }
 
+/**
+ * Diagnostics returned alongside a generated manual. These explain *why* a
+ * result looks the way it does — above all, why a chapter yielded no figures —
+ * so a teacher can act (e.g. supply an explicit page range) instead of
+ * concluding the feature is broken.
+ */
+export interface GenerationMeta {
+  chapterSliceStrategy:
+    | "page-range"
+    | "heading-match"
+    | "name-match"
+    | "fallback-full";
+  chapterPageCount: number;
+  imagesFound: number;
+  workbookUsed: boolean;
+  sourceContext?: string;
+  timings?: {
+    pdfExtractMs: number;
+    generatePhaseMs: number;
+    imagesMs: number;
+    totalMs: number;
+  };
+}
+
 /** Default bilingual titles for the standard sections (used by the editor's "add section" menu). */
 export const SECTION_TITLES: Record<
   (typeof SECTION_TYPES)[number],

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import DemoEditor from "@/components/DemoEditor";
 
@@ -11,5 +12,11 @@ import DemoEditor from "@/components/DemoEditor";
  */
 export default function DemoPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <DemoEditor />;
+  // DemoEditor reads ?notice= via useSearchParams, which needs a boundary here
+  // so the route can still be prerendered.
+  return (
+    <Suspense>
+      <DemoEditor />
+    </Suspense>
+  );
 }

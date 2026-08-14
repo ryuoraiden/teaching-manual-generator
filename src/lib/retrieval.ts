@@ -18,14 +18,40 @@ import type { PageTextResult } from "pdf-parse";
 const MAX_TEXTBOOK_CHARS = 60_000;
 const MAX_HANDBOOK_CHARS = 40_000;
 
-/** Patterns that mark a chapter heading on a page, in Malayalam and English. */
+/** Malayalam digits ൦-൯ (U+0D66-U+0D6F), used for chapter numbers in SCERT books. */
+const MALAYALAM_DIGITS = "൦൧൨൩൪൫൬൭൮൯";
+
+/** "13" -> "൧൩". Returns undefined if the input isn't plain Arabic digits. */
+function toMalayalamDigits(n: string): string | undefined {
+  if (!/^\d+$/u.test(n)) return undefined;
+  return [...n].map((d) => MALAYALAM_DIGITS[Number(d)]).join("");
+}
+
+/**
+ * Patterns that mark a chapter heading on a page, in Malayalam and English.
+ *
+ * SCERT textbooks are inconsistent here: the number may be Arabic (3) or
+ * Malayalam (൩), and the heading word varies. Missing the heading is expensive
+ * — it drops us to `fallback-full`, which yields no page numbers and therefore
+ * no textbook figures at all — so we cast a deliberately wide net.
+ */
 function chapterHeadingPatterns(chapterNumber: string): RegExp[] {
-  const n = escapeRegExp(chapterNumber.trim());
-  return [
-    new RegExp(`(പാഠം|യൂണിറ്റ്|അധ്യായം)\\s*[-:.]?\\s*${n}(?!\\d)`, "u"),
-    new RegExp(`(chapter|unit|lesson)\\s*[-:.]?\\s*${n}(?!\\d)`, "iu"),
-    new RegExp(`^\\s*${n}\\s*$`, "mu"), // bare chapter number on its own line
-  ];
+  const raw = chapterNumber.trim();
+  const variants = [raw, toMalayalamDigits(raw)].filter(
+    (v): v is string => Boolean(v)
+  );
+  const heads = "പാഠം|പാഠഭാഗം|യൂണിറ്റ്|അധ്യായം|ഭാഗം";
+
+  return variants.flatMap((v) => {
+    const n = escapeRegExp(v);
+    // `(?!\d)` stops "1" matching chapter 10; the Malayalam guard does the same.
+    const tail = `(?![\\d${MALAYALAM_DIGITS}])`;
+    return [
+      new RegExp(`(${heads})\\s*[-:.]?\\s*${n}${tail}`, "u"),
+      new RegExp(`(chapter|unit|lesson)\\s*[-:.]?\\s*${n}${tail}`, "iu"),
+      new RegExp(`^\\s*${n}\\s*$`, "mu"), // bare chapter number on its own line
+    ];
+  });
 }
 
 function escapeRegExp(s: string): string {
@@ -37,9 +63,15 @@ function escapeRegExp(s: string): string {
  * Falls back to the whole (truncated) book if no heading is found, and tells
  * the caller which strategy was used so the UI/prompt can reflect it.
  */
+export type ChapterStrategy =
+  | "page-range"
+  | "heading-match"
+  | "name-match"
+  | "fallback-full";
+
 export interface ChapterSlice {
   text: string;
-  strategy: "heading-match" | "name-match" | "fallback-full";
+  strategy: ChapterStrategy;
   /**
    * 1-based PDF page numbers belonging to the chapter — used to extract only
    * the chapter's images. Empty on fallback (we didn't locate the chapter, so
@@ -48,16 +80,39 @@ export interface ChapterSlice {
   pageNumbers: number[];
 }
 
+/** An explicit, teacher-supplied page range (1-based, inclusive). */
+export interface PageRange {
+  from: number;
+  to: number;
+}
+
 export function sliceChapter(
   pages: PageTextResult[],
   chapterNumber: string,
-  chapterName?: string
+  chapterName?: string,
+  pageRange?: PageRange
 ): ChapterSlice {
+  // An explicit range always wins: it's the teacher's escape hatch for books
+  // whose headings we can't detect, and the only way to get figures out of a
+  // chapter that would otherwise fall back.
+  if (pageRange) {
+    const from = Math.max(1, Math.min(pageRange.from, pageRange.to));
+    const to = Math.min(pages.length, Math.max(pageRange.from, pageRange.to));
+    const slice = pages.filter((p) => p.num >= from && p.num <= to);
+    if (slice.length > 0) {
+      return {
+        text: joinPages(slice).slice(0, MAX_TEXTBOOK_CHARS),
+        strategy: "page-range",
+        pageNumbers: slice.map((p) => p.num),
+      };
+    }
+  }
+
   const numPatterns = chapterHeadingPatterns(chapterNumber);
   const nextNumPatterns = chapterHeadingPatterns(String(Number(chapterNumber) + 1));
 
   let start = pages.findIndex((p) => numPatterns.some((re) => re.test(p.text)));
-  let strategy: "heading-match" | "name-match" | "fallback-full" = "heading-match";
+  let strategy: ChapterStrategy = "heading-match";
 
   if (start === -1 && chapterName) {
     const name = chapterName.trim();

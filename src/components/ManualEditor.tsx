@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   SECTION_TITLES,
   type BasicInfo,
+  type GenerationMeta,
   type Section,
   type TeachingManual,
   type TextbookImage,
@@ -15,19 +16,37 @@ interface Props {
   textbookImages: TextbookImage[];
   /** Timestamp of the last successful local autosave, if any. */
   savedAt?: number | null;
+  /** Diagnostics from generation; null for a reopened draft. */
+  meta?: GenerationMeta | null;
   onChange: (manual: TeachingManual) => void;
   onStartOver: () => void;
+}
+
+/**
+ * Explain an empty figure gallery. Silence here was being read as "the image
+ * feature is broken", when the real cause is almost always that we couldn't
+ * work out which pages the chapter occupies.
+ */
+function figureNotice(meta: GenerationMeta): string | null {
+  if (meta.imagesFound > 0) return null;
+  if (meta.chapterSliceStrategy === "fallback-full") {
+    return "We couldn't tell which pages this chapter covers, so no textbook figures were extracted. Start over and enter the chapter's page range (e.g. 24-33) to get them.";
+  }
+  return "No figures were found on this chapter's pages. The textbook may store them in a form we can't extract (for example, scanned pages). You can still add your own images to any section.";
 }
 
 export default function ManualEditor({
   manual,
   textbookImages,
   savedAt,
+  meta,
   onChange,
   onStartOver,
 }: Props) {
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
+  const notice = meta && !noticeDismissed ? figureNotice(meta) : null;
 
   function updateBasicInfo<K extends keyof BasicInfo>(key: K, value: string) {
     onChange({ ...manual, basicInfo: { ...manual.basicInfo, [key]: value } });
@@ -159,6 +178,20 @@ export default function ManualEditor({
 
       {exportError && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</p>
+      )}
+
+      {notice && (
+        <div className="flex items-start gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="flex-1">{notice}</p>
+          <button
+            type="button"
+            onClick={() => setNoticeDismissed(true)}
+            aria-label="Dismiss"
+            className="min-h-11 min-w-11 shrink-0 rounded text-amber-700 hover:bg-amber-100"
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       <div className="manual-paper">

@@ -9,7 +9,11 @@ import {
   newManualId,
   saveManual,
 } from "@/lib/manual-store";
-import type { TeachingManual, TextbookImage } from "@/lib/manual-schema";
+import type {
+  GenerationMeta,
+  TeachingManual,
+  TextbookImage,
+} from "@/lib/manual-schema";
 
 /**
  * Two phases on one page:
@@ -25,6 +29,9 @@ export default function Home() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [listKey, setListKey] = useState(0);
+  // Only meaningful for a freshly generated manual, so it is deliberately not
+  // persisted with the draft — reopening a saved manual shows no notice.
+  const [meta, setMeta] = useState<GenerationMeta | null>(null);
 
   // Autosave is debounced so typing doesn't hit IndexedDB on every keystroke.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,11 +59,12 @@ export default function Home() {
   }, [manual, textbookImages, currentId]);
 
   const handleGenerated = useCallback(
-    (m: TeachingManual, images: TextbookImage[]) => {
+    (m: TeachingManual, images: TextbookImage[], m2?: GenerationMeta) => {
       createdAtRef.current = Date.now();
       setCurrentId(newManualId());
       setManual(m);
       setTextbookImages(images);
+      setMeta(m2 ?? null);
     },
     []
   );
@@ -69,6 +77,7 @@ export default function Home() {
     setManual(record.manual);
     setTextbookImages(record.textbookImages ?? []);
     setSavedAt(record.updatedAt);
+    setMeta(null);
   }, []);
 
   const handleStartOver = useCallback(() => {
@@ -78,6 +87,7 @@ export default function Home() {
     setTextbookImages([]);
     setCurrentId(null);
     setSavedAt(null);
+    setMeta(null);
     createdAtRef.current = undefined;
     setListKey((k) => k + 1);
   }, []);
@@ -103,6 +113,7 @@ export default function Home() {
           manual={manual}
           textbookImages={textbookImages}
           savedAt={savedAt}
+          meta={meta}
           onChange={setManual}
           onStartOver={handleStartOver}
         />
