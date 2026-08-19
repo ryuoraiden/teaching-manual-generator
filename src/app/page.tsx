@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import FeedbackForm from "@/components/FeedbackForm";
 import GeneratingStatus from "@/components/GeneratingStatus";
 import ManualEditor from "@/components/ManualEditor";
 import SavedManuals from "@/components/SavedManuals";
@@ -186,6 +187,12 @@ export default function Home() {
     setListKey((k) => k + 1);
   }, []);
 
+  // A short technical note attached to feedback, so a report like "no pictures
+  // came" arrives with the reason already on it. Content is never included.
+  const feedbackContext = meta
+    ? `slice=${meta.chapterSliceStrategy} pages=${meta.chapterPageCount} figures=${meta.imagesFound} placed=${meta.figuresPlaced ?? 0} workbook=${meta.workbookUsed}`
+    : undefined;
+
   return (
     <main className="flex-1 px-4 py-10">
       <header className="mx-auto mb-8 max-w-3xl text-center">
@@ -215,17 +222,21 @@ export default function Home() {
             )}
             <UploadForm onJobStarted={handleJobStarted} />
             <SavedManuals onOpen={handleOpen} refreshKey={listKey} />
+            <FeedbackForm />
           </>
         )
       ) : (
-        <ManualEditor
-          manual={manual}
-          textbookImages={textbookImages}
-          savedAt={savedAt}
-          meta={meta}
-          onChange={setManual}
-          onStartOver={handleStartOver}
-        />
+        <>
+          <ManualEditor
+            manual={manual}
+            textbookImages={textbookImages}
+            savedAt={savedAt}
+            meta={meta}
+            onChange={setManual}
+            onStartOver={handleStartOver}
+          />
+          <FeedbackForm context={feedbackContext} />
+        </>
       )}
     </main>
   );
