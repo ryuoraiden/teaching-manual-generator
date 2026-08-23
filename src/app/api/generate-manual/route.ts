@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createJob, completeJob, failJob } from "@/lib/job-store";
 import { runGeneration } from "@/lib/generate-pipeline";
+import { reportGeneration } from "@/lib/notify";
 import type { PageRange } from "@/lib/retrieval";
 import type { OutputLanguage } from "@/lib/manual-schema";
 
@@ -112,12 +113,42 @@ export async function POST(req: NextRequest) {
           language,
         });
         completeJob(job.id, result);
+
+        // Usage reporting is best-effort and must never affect the manual the
+        // teacher is waiting for, so it is awaited only after the job is stored.
+        await reportGeneration({
+          standard,
+          subject,
+          chapterNumber,
+          chapterName,
+          language,
+          ok: true,
+          stats: {
+            sections: result.manual.sections.length,
+            imagesFound: result.meta.imagesFound,
+            figuresPlaced: result.meta.figuresPlaced ?? 0,
+            workbookUsed: result.meta.workbookUsed,
+            chapterSliceStrategy: result.meta.chapterSliceStrategy,
+            totalMs: result.meta.timings?.totalMs ?? 0,
+          },
+        });
       } catch (err) {
         console.error(`generate-manual job ${job.id} failed:`, err);
-        failJob(
-          job.id,
-          err instanceof Error ? err.message : "Generation failed."
-        );
+        const message =
+          err instanceof Error ? err.message : "Generation failed.";
+        failJob(job.id, message);
+
+        // Failures are the more useful signal: quota exhaustion and free-tier
+        // overload are invisible otherwise until a teacher complains.
+        await reportGeneration({
+          standard,
+          subject,
+          chapterNumber,
+          chapterName,
+          language,
+          ok: false,
+          error: message,
+        });
       }
     });
 
