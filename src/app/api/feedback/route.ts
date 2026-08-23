@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { postWebhook } from "@/lib/notify";
 
 export const runtime = "nodejs";
 
@@ -97,36 +98,21 @@ export async function POST(req: NextRequest) {
       JSON.stringify({ message, role, contact, context, at: new Date().toISOString() })
     );
 
-    const webhook = process.env.FEEDBACK_WEBHOOK_URL;
-    let delivered = false;
-    if (webhook) {
-      const lines = [
-        "**New feedback**",
-        message,
-        role ? `\n_Role:_ ${role}` : "",
-        contact ? `\n_Contact:_ ${contact}` : "",
-        context ? `\n_Context:_ \`${context}\`` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-      try {
-        const res = await fetch(webhook, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          // Discord caps content at 2000 chars; trim rather than get rejected.
-          body: JSON.stringify({ content: lines.slice(0, 1990) }),
-          signal: AbortSignal.timeout(8000),
-        });
-        delivered = res.ok;
-        if (!res.ok) {
-          console.error("feedback webhook rejected:", res.status);
-        }
-      } catch (err) {
-        // Never fail the teacher's submission because our relay is down — it's
-        // already in the log above.
-        console.error("feedback webhook failed:", err);
-      }
-    }
+    const lines = [
+      "**New feedback**",
+      message,
+      role ? `\n_Role:_ ${role}` : "",
+      contact ? `\n_Contact:_ ${contact}` : "",
+      context ? `\n_Context:_ \`${context}\`` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const delivered = await postWebhook(
+      process.env.FEEDBACK_WEBHOOK_URL,
+      lines,
+      "feedback webhook"
+    );
 
     return NextResponse.json({ ok: true, delivered });
   } catch (err) {
