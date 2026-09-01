@@ -50,8 +50,8 @@ export async function runGeneration(
   const t0 = Date.now();
   setStage(jobId, "Reading the PDFs…");
   const [textbook, handbook] = await Promise.all([
-    extractPdfText(textbookBuffer),
-    extractPdfText(input.handbookBuffer),
+    extractPdfText(textbookBuffer, "textbook"),
+    extractPdfText(input.handbookBuffer, "teacher handbook"),
   ]);
   const pdfExtractMs = Date.now() - t0;
 
@@ -75,7 +75,7 @@ export async function runGeneration(
   let workbookExcerpt: string | undefined;
   if (input.workbookBuffer) {
     try {
-      const workbook = await extractPdfText(input.workbookBuffer);
+      const workbook = await extractPdfText(input.workbookBuffer, "workbook");
       const wbChapter = sliceChapter(
         workbook.pages,
         chapterNumber,
