@@ -63,7 +63,12 @@ export interface GenerationReport {
 function classify(error: string): string {
   if (/429|quota|RESOURCE_EXHAUSTED/i.test(error)) return "QUOTA EXHAUSTED";
   if (/503|UNAVAILABLE|high demand/i.test(error)) return "MODEL OVERLOADED";
-  if (/no extractable text|scanned/i.test(error)) return "UNREADABLE PDF";
+  // Upload truncation is the one a teacher can actually fix by retrying, so it
+  // is worth separating from a genuinely broken or wrong file.
+  if (/did not finish uploading/i.test(error)) return "UPLOAD INCOMPLETE";
+  if (/does not look like a PDF|file is empty/i.test(error)) return "WRONG FILE TYPE";
+  if (/no extractable text|scanned/i.test(error)) return "SCANNED PDF, NEEDS OCR";
+  if (/appears to be damaged/i.test(error)) return "DAMAGED PDF";
   return "ERROR";
 }
 
