@@ -125,6 +125,10 @@ export interface GenerationMeta {
   imagesFound: number;
   /** How many of those figures the model placed into sections (Phase 4). */
   figuresPlaced?: number;
+  /** The Gemini model that wrote the manual, after any fallback. */
+  model?: string;
+  /** Failed attempts before it, e.g. "gemini-flash-latest: overloaded". */
+  modelFailures?: string[];
   workbookUsed: boolean;
   sourceContext?: string;
   timings?: {
