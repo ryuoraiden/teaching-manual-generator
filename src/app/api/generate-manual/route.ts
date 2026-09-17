@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createJob, completeJob, failJob } from "@/lib/job-store";
 import { runGeneration } from "@/lib/generate-pipeline";
 import { reportGeneration } from "@/lib/notify";
+import { AllModelsFailedError } from "@/lib/model-fallback";
 import type { PageRange } from "@/lib/retrieval";
 import type { OutputLanguage } from "@/lib/manual-schema";
 
@@ -130,7 +131,9 @@ export async function POST(req: NextRequest) {
             workbookUsed: result.meta.workbookUsed,
             chapterSliceStrategy: result.meta.chapterSliceStrategy,
             totalMs: result.meta.timings?.totalMs ?? 0,
+            model: result.meta.model,
           },
+          modelFailures: result.meta.modelFailures,
         });
       } catch (err) {
         console.error(`generate-manual job ${job.id} failed:`, err);
@@ -148,6 +151,10 @@ export async function POST(req: NextRequest) {
           language,
           ok: false,
           error: message,
+          modelFailures:
+            err instanceof AllModelsFailedError
+              ? err.failures.map((f) => `${f.model}: ${f.kind}`)
+              : undefined,
         });
       }
     });

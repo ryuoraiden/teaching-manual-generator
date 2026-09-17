@@ -50,9 +50,17 @@ export interface GenerationReport {
     workbookUsed: boolean;
     chapterSliceStrategy: string;
     totalMs: number;
+    /** The model that wrote the manual. */
+    model?: string;
   };
   /** Present on failure. */
   error?: string;
+  /**
+   * Model attempts that failed, e.g. "gemini-flash-latest: overloaded". On a
+   * success this shows the fallback earning its keep; on a failure it shows
+   * what was tried before giving up.
+   */
+  modelFailures?: string[];
 }
 
 /**
@@ -61,6 +69,11 @@ export interface GenerationReport {
  * and they call for completely different responses (wait a day vs retry now).
  */
 function classify(error: string): string {
+  // Verdicts from the model fallback come first: they summarise every attempt,
+  // whereas the raw patterns below only describe a single one.
+  if (/not configured correctly/i.test(error)) return "CONFIG ERROR";
+  if (/allowance for today/i.test(error)) return "QUOTA EXHAUSTED";
+  if (/overloaded right now/i.test(error)) return "MODEL OVERLOADED";
   if (/429|quota|RESOURCE_EXHAUSTED/i.test(error)) return "QUOTA EXHAUSTED";
   if (/503|UNAVAILABLE|high demand/i.test(error)) return "MODEL OVERLOADED";
   // Upload truncation is the one a teacher can actually fix by retrying, so it
@@ -93,13 +106,20 @@ export async function reportGeneration(r: GenerationReport): Promise<void> {
           ? "⚠️ chapter pages not detected — this teacher got no figures"
           : "",
         r.stats?.workbookUsed ? "📘 workbook used" : "",
+        r.stats?.model ? `model: ${r.stats.model}` : "",
+        r.modelFailures?.length
+          ? `🔁 rescued by fallback after: ${r.modelFailures.join(", ")}`
+          : "",
       ]
         .filter(Boolean)
         .join("\n")
     : [
         `❌ **${classify(r.error ?? "")}** — ${who}`,
+        r.modelFailures?.length ? `tried: ${r.modelFailures.join(" > ")}` : "",
         `\`\`\`${(r.error ?? "unknown").slice(0, 300)}\`\`\``,
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
 
   await postWebhook(process.env.USAGE_WEBHOOK_URL, content, "usage webhook");
 }

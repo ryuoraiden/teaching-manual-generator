@@ -11,6 +11,11 @@ import {
   RESOURCE_PLATFORMS,
   suggestionToLink,
 } from "./resource-links";
+import {
+  withModelFallback,
+  type AttemptRecord,
+  type FallbackOptions,
+} from "./model-fallback";
 
 /**
  * Generation layer - Google Gemini (free tier).
@@ -22,15 +27,33 @@ import {
  */
 
 /**
- * Generation model. Overridable via GEMINI_MODEL so the model can be changed on
- * the VM (in ~/manual.env) without a rebuild.
+ * Models to try, in order. The first one that answers writes the manual.
  *
- * This matters more than it looks: the Gemini free tier meters requests per
- * project *per model*, and gemini-2.5-flash is currently capped at **20
- * requests per day** — a hard ceiling on how many manuals the whole site can
- * produce. Pointing this at a different model gets a separate daily bucket.
+ * Production showed a single model is not enough: every failure over four days
+ * was a 503 "high demand" from one model, lasting minutes, while other models
+ * were available. Overload and free-tier quota (about 20 requests a day) are
+ * both metered per model, so a chain survives both.
+ *
+ * Configuration, read at call time so ~/manual.env changes need no rebuild:
+ *  - GEMINI_MODEL_CHAIN="a,b,c" sets the full order explicitly.
+ *  - Otherwise GEMINI_MODEL goes first, followed by the defaults.
+ *
+ * The defaults are the models compared for Malayalam quality on 2026-08-15, so
+ * falling back never silently swaps in an untested model. Lite models are left
+ * out on purpose: they were not quality checked for full manual generation.
  */
-const MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+const DEFAULT_MODEL_CHAIN = [
+  "gemini-flash-latest",
+  "gemini-3.5-flash",
+  "gemini-2.5-flash",
+];
+
+export function geminiModelChain(): string[] {
+  const explicit = process.env.GEMINI_MODEL_CHAIN?.trim();
+  if (explicit) return explicit.split(",").map((m) => m.trim()).filter(Boolean);
+  const primary = process.env.GEMINI_MODEL?.trim();
+  return [...new Set([primary, ...DEFAULT_MODEL_CHAIN].filter(Boolean))] as string[];
+}
 
 let ai: GoogleGenAI | null = null;
 function getClient(): GoogleGenAI {
@@ -199,9 +222,18 @@ Digital resource suggestions (the per-section "resources" array):
 - platform "youtube" for classroom videos (add "KITE VICTERS" to the query when a Kerala school broadcast likely exists), "wikipedia" for reference articles (query in Malayalam for Malayalam-medium topics, English otherwise), "google" for anything else (worksheets, PhET simulations, DIKSHA content).
 - label: short and in the manual's language, e.g. "ജലചക്രം - വീഡിയോ" or "Water cycle simulation".`;
 
+export interface GeneratedManual {
+  manual: TeachingManual;
+  /** The model that actually wrote it, which may not be the first in the chain. */
+  model: string;
+  /** Attempts that failed before it succeeded. Empty on the happy path. */
+  failures: AttemptRecord[];
+}
+
 export async function generateManual(
-  input: GenerateManualInput
-): Promise<TeachingManual> {
+  input: GenerateManualInput,
+  opts: { onFailure?: FallbackOptions["onFailure"] } = {}
+): Promise<GeneratedManual> {
   const languageInstruction =
     input.language === "both"
       ? "Write section content bilingually: Malayalam first, then English."
@@ -231,46 +263,61 @@ export async function generateManual(
     .filter(Boolean)
     .join("\n");
 
-  const response = await getClient().models.generateContent({
-    model: MODEL,
-    contents: userPrompt,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      temperature: 0.35,
+  // Everything that can fail per model sits inside the attempt, including JSON
+  // parsing and schema validation. One model returning unusable output is worth
+  // trying another model for, exactly like an outage.
+  const result = await withModelFallback(
+    geminiModelChain(),
+    async (model, signal) => {
+      const response = await getClient().models.generateContent({
+        model,
+        contents: userPrompt,
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
+          temperature: 0.35,
+          abortSignal: signal,
+        },
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error(
+          "The model returned no output. The response may have been blocked."
+        );
+      }
+
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error("The model did not return valid JSON.");
+      }
+
+      const parsed = GeneratedManualSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new Error(
+          `Model output did not match the teaching-manual schema: ${parsed.error.issues
+            .map((i) => `${i.path.join(".")} ${i.message}`)
+            .join("; ")}`
+        );
+      }
+      return parsed.data;
     },
-  });
-
-  const text = response.text;
-  if (!text) {
-    throw new Error(
-      "The model returned no output. This can happen when the free-tier rate limit is hit or the response was blocked - try again in a moment."
-    );
-  }
-
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error("The model did not return valid JSON.");
-  }
-
-  const parsed = GeneratedManualSchema.safeParse(json);
-  if (!parsed.success) {
-    throw new Error(
-      `Model output did not match the teaching-manual schema: ${parsed.error.issues
-        .map((i) => `${i.path.join(".")} ${i.message}`)
-        .join("; ")}`
-    );
-  }
+    { onFailure: opts.onFailure }
+  );
 
   // Convert search suggestions into guaranteed-valid links (max 3/section).
   return {
-    basicInfo: parsed.data.basicInfo,
-    sections: parsed.data.sections.map(({ resources, ...section }) => ({
-      ...section,
-      media: (resources ?? []).slice(0, 3).map(suggestionToLink),
-    })),
+    model: result.model,
+    failures: result.failures,
+    manual: {
+      basicInfo: result.value.basicInfo,
+      sections: result.value.sections.map(({ resources, ...section }) => ({
+        ...section,
+        media: (resources ?? []).slice(0, 3).map(suggestionToLink),
+      })),
+    },
   };
 }

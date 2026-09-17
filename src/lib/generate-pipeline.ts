@@ -118,17 +118,31 @@ export async function runGeneration(
   })();
 
   const [generated, textbookImages] = await Promise.all([
-    generateManual({
-      standard,
-      subject,
-      chapterNumber,
-      chapterName,
-      language,
-      textbookExcerpt: chapter.text,
-      handbookExcerpt,
-      workbookExcerpt,
-      sourceContext,
-    }),
+    generateManual(
+      {
+        standard,
+        subject,
+        chapterNumber,
+        chapterName,
+        language,
+        textbookExcerpt: chapter.text,
+        handbookExcerpt,
+        workbookExcerpt,
+        sourceContext,
+      },
+      {
+        // Without this the teacher watches a spinner that looks stuck while we
+        // quietly retry. Saying so keeps them waiting instead of leaving.
+        onFailure: (failure, willRetry) => {
+          // The webhook only carries a short label, so keep the raw error in
+          // the server log for `docker logs manual` when debugging.
+          console.warn(
+            `generate-manual [${jobId}] ${failure.model} failed (${failure.kind}, ${failure.ms}ms): ${failure.message}`
+          );
+          if (willRetry) setStage(jobId, "Google's AI is busy, trying another model…");
+        },
+      }
+    ),
     imagesPromise,
   ]);
   const generatePhaseMs = Date.now() - tGen;
@@ -137,7 +151,7 @@ export async function runGeneration(
   // support. This needs both halves above, so it's the one step that can't be
   // parallelised — affordable only because generation is a background job.
   // Best-effort: a failure here must never cost the teacher their manual.
-  let manual = generated;
+  let manual = generated.manual;
   let figuresPlaced = 0;
   let placementMs = 0;
   if (textbookImages.length > 0) {
@@ -145,7 +159,7 @@ export async function runGeneration(
     const tPlace = Date.now();
     try {
       const result = await placeFigures({
-        manual: generated,
+        manual: generated.manual,
         images: textbookImages,
         language,
       });
@@ -174,6 +188,8 @@ export async function runGeneration(
       chapterPageCount: chapter.pageNumbers.length,
       imagesFound: textbookImages.length,
       figuresPlaced,
+      model: generated.model,
+      modelFailures: generated.failures.map((f) => `${f.model}: ${f.kind}`),
       workbookUsed: Boolean(workbookExcerpt),
       sourceContext: "TextbooksAll / SCERT / Samagra index hints applied",
       timings,
